@@ -88,6 +88,7 @@ import {
 import { resetBrowserStateVersions } from "../data/tabSync";
 
 import { collabErrorIndicatorAtom } from "./CollabError";
+import { createCollabSocket } from "./CollabSocket";
 import Portal from "./Portal";
 
 import type {
@@ -505,10 +506,6 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     this.setIsCollaborating(true);
     LocalData.pauseSave("collaboration");
 
-    const { default: socketIOClient } = await import(
-      /* webpackChunkName: "socketIoClient" */ "socket.io-client"
-    );
-
     const fallbackInitializationHandler = () => {
       this.initializeRoom({
         roomLinkData: existingRoomLinkData,
@@ -520,10 +517,13 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     this.fallbackInitializationHandler = fallbackInitializationHandler;
 
     try {
+      const collabProtocol =
+        window.location.protocol === "https:" ? "wss" : "ws";
+      const collabUrl =
+        import.meta.env.VITE_APP_WS_SERVER_URL ||
+        `${collabProtocol}://${window.location.host}/api/v1/collab/ws`;
       this.portal.socket = this.portal.open(
-        socketIOClient(import.meta.env.VITE_APP_WS_SERVER_URL, {
-          transports: ["websocket", "polling"],
-        }),
+        createCollabSocket(collabUrl),
         roomId,
         roomKey,
       );

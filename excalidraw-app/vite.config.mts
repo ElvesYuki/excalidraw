@@ -11,11 +11,19 @@ import { woff2BrowserPlugin } from "../scripts/woff2/woff2-vite-plugins";
 export default defineConfig(({ mode }) => {
   // To load .env variables
   const envVars = loadEnv(mode, `../`);
+  const backendTarget =
+    envVars.VITE_APP_BACKEND_URL || "http://127.0.0.1:9780";
   // https://vitejs.dev/config/
   return {
     server: {
       host: "0.0.0.0",
       port: Number(envVars.VITE_APP_PORT || 3000),
+      proxy: {
+        "/api": {
+          target: backendTarget,
+          changeOrigin: true,
+        },
+      },
       // open the browser
       open: true,
     },

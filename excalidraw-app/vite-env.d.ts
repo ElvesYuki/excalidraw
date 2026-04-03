@@ -4,6 +4,7 @@
 interface ImportMetaEnv {
   // The port to run the dev server
   VITE_APP_PORT: string;
+  VITE_APP_BACKEND_URL: string;
 
   VITE_APP_BACKEND_V2_GET_URL: string;
   VITE_APP_BACKEND_V2_POST_URL: string;

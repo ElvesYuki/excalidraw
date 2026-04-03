@@ -26,8 +26,8 @@ import { FILE_CACHE_MAX_AGE_SEC } from "../app_constants";
 import { getSyncableElements } from ".";
 
 import type { SyncableExcalidrawElement } from ".";
+import type { CollabSocket } from "../collab/CollabSocket";
 import type Portal from "../collab/Portal";
-import type { Socket } from "socket.io-client";
 
 type StoredScenePayload = {
   sceneVersion: number;
@@ -38,7 +38,8 @@ type StoredScenePayload = {
 const API_PREFIX = "/api/v1";
 
 const getStorageBackendBaseUrl = () => {
-  const configuredBaseUrl = import.meta.env.VITE_APP_STORAGE_BACKEND_URL?.trim();
+  const configuredBaseUrl =
+    import.meta.env.VITE_APP_STORAGE_BACKEND_URL?.trim();
   return configuredBaseUrl || window.location.origin;
 };
 
@@ -80,7 +81,9 @@ const base64ToBytes = (value: string) => {
   return bytes;
 };
 
-const fetchScene = async (roomId: string): Promise<StoredScenePayload | null> => {
+const fetchScene = async (
+  roomId: string,
+): Promise<StoredScenePayload | null> => {
   const response = await fetch(createStorageUrl(`/scenes/${roomId}`));
   if (response.status === 404) {
     return null;
@@ -129,7 +132,7 @@ const putFile = async ({
         "Content-Type": contentType || "application/octet-stream",
         "Cache-Control": `public, max-age=${FILE_CACHE_MAX_AGE_SEC}`,
       },
-      body: buffer,
+      body: buffer as unknown as BodyInit,
     },
   );
   if (!response.ok) {
@@ -182,12 +185,12 @@ const decryptElements = async (
 };
 
 class FirebaseSceneVersionCache {
-  private static cache = new WeakMap<Socket, number>();
-  static get = (socket: Socket) => {
+  private static cache = new WeakMap<CollabSocket, number>();
+  static get = (socket: CollabSocket) => {
     return FirebaseSceneVersionCache.cache.get(socket);
   };
   static set = (
-    socket: Socket,
+    socket: CollabSocket,
     elements: readonly SyncableExcalidrawElement[],
   ) => {
     FirebaseSceneVersionCache.cache.set(socket, getSceneVersion(elements));
@@ -265,11 +268,12 @@ const createStoredScene = async (
 ) => {
   const sceneVersion = getSceneVersion(elements);
   const { ciphertext, iv } = await encryptElements(roomKey, elements);
-  return {
+  const storedScene: StoredScenePayload = {
     sceneVersion,
     ciphertext: bytesToBase64(new Uint8Array(ciphertext)),
     iv: bytesToBase64(iv),
-  } satisfies StoredScenePayload;
+  };
+  return storedScene;
 };
 
 export const saveToFirebase = async (
@@ -314,7 +318,7 @@ export const saveToFirebase = async (
 export const loadFromFirebase = async (
   roomId: string,
   roomKey: string,
-  socket: Socket | null,
+  socket: CollabSocket | null,
 ): Promise<readonly SyncableExcalidrawElement[] | null> => {
   const storedScene = await fetchScene(roomId);
   if (!storedScene) {

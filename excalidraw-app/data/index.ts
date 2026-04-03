@@ -62,8 +62,16 @@ export const getSyncableElements = (
     isSyncableElement(element),
   ) as SyncableExcalidrawElement[];
 
-const BACKEND_V2_GET = import.meta.env.VITE_APP_BACKEND_V2_GET_URL;
-const BACKEND_V2_POST = import.meta.env.VITE_APP_BACKEND_V2_POST_URL;
+const BACKEND_BASE_URL =
+  import.meta.env.VITE_APP_STORAGE_BACKEND_URL?.trim() ||
+  import.meta.env.VITE_APP_BACKEND_URL?.trim() ||
+  window.location.origin;
+const BACKEND_V2_GET =
+  import.meta.env.VITE_APP_BACKEND_V2_GET_URL ||
+  `${BACKEND_BASE_URL}/api/v1/json/`;
+const BACKEND_V2_POST =
+  import.meta.env.VITE_APP_BACKEND_V2_POST_URL ||
+  `${BACKEND_BASE_URL}/api/v1/json`;
 
 const generateRoomId = async () => {
   const buffer = new Uint8Array(ROOM_ID_BYTES);
