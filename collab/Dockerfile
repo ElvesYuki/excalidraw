@@ -15,14 +15,7 @@ WORKDIR /app
 
 COPY --from=build /src/app/package.json ./package.json
 COPY --from=build /src/app/yarn.lock ./yarn.lock
-COPY --from=build /src/app/build ./build
-COPY --from=build /src/app/public ./public
-COPY --from=build /src/app/src ./src
-COPY --from=build /src/app/.env.development ./.env.development
-COPY --from=build /src/app/tsconfig.json ./tsconfig.json
-COPY --from=build /src/app/.eslintrc.json ./.eslintrc.json
-COPY --from=build /src/app/pm2.production.json ./pm2.production.json
-COPY --from=build /src/app/pm2.json ./pm2.json
+COPY --from=build /src/app/dist ./dist
 
 RUN yarn --production --network-timeout 600000
 
