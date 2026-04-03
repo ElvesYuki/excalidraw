@@ -9,6 +9,7 @@
 !public/
 !packages/
 !collab/
+!nginx/
 !scripts/
 !tsconfig.json
 !vendor/
