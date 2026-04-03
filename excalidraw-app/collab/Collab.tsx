@@ -320,7 +320,6 @@ class Collab extends PureComponent<CollabProps, CollabState> {
       const storedElements = await saveToFirebase(
         this.portal,
         syncableElements,
-        this.excalidrawAPI.getAppState(),
       );
 
       this.resetErrorIndicator();
@@ -468,6 +467,10 @@ class Collab extends PureComponent<CollabProps, CollabState> {
 
   private fallbackInitializationHandler: null | (() => any) = null;
 
+  private getCollabServerUrl = () => {
+    return import.meta.env.VITE_APP_WS_SERVER_URL || window.location.origin;
+  };
+
   startCollaboration = async (
     existingRoomLinkData: null | { roomId: string; roomKey: string },
   ) => {
@@ -521,7 +524,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
 
     try {
       this.portal.socket = this.portal.open(
-        socketIOClient(import.meta.env.VITE_APP_WS_SERVER_URL, {
+        socketIOClient(this.getCollabServerUrl(), {
           transports: ["websocket", "polling"],
         }),
         roomId,

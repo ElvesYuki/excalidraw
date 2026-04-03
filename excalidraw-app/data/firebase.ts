@@ -1,38 +1,24 @@
-import { reconcileElements } from "@excalidraw/excalidraw";
 import { MIME_TYPES, toBrandedType } from "@excalidraw/common";
-import { decompressData } from "@excalidraw/excalidraw/data/encode";
-import {
-  encryptData,
-  decryptData,
-} from "@excalidraw/excalidraw/data/encryption";
+import { getDataURL, getMimeType } from "@excalidraw/excalidraw/data/blob";
 import { restoreElements } from "@excalidraw/excalidraw/data/restore";
 import { getSceneVersion } from "@excalidraw/element";
 
-import type { RemoteExcalidrawElement } from "@excalidraw/excalidraw/data/reconcile";
-import type {
-  ExcalidrawElement,
-  FileId,
-  OrderedExcalidrawElement,
-} from "@excalidraw/element/types";
-import type {
-  AppState,
-  BinaryFileData,
-  BinaryFileMetadata,
-  DataURL,
-} from "@excalidraw/excalidraw/types";
-
-import { FILE_CACHE_MAX_AGE_SEC } from "../app_constants";
-
-import { getSyncableElements } from ".";
+import type { ExcalidrawElement, FileId } from "@excalidraw/element/types";
+import type { BinaryFileData, DataURL } from "@excalidraw/excalidraw/types";
 
 import type { SyncableExcalidrawElement } from ".";
 import type Portal from "../collab/Portal";
 import type { Socket } from "socket.io-client";
 
 type StoredScenePayload = {
-  sceneVersion: number;
-  iv: string;
-  ciphertext: string;
+  elements: readonly SyncableExcalidrawElement[];
+  fileUrls?: Record<string, string>;
+};
+
+type UploadFileResult = {
+  contentType?: string;
+  fileName?: string;
+  url: string;
 };
 
 const API_PREFIX = "/api/v1";
@@ -42,18 +28,22 @@ const getStorageBackendBaseUrl = () => {
   return configuredBaseUrl || window.location.origin;
 };
 
-const createStorageUrl = (path: string, searchParams?: URLSearchParams) => {
-  const url = new URL(`${API_PREFIX}${path}`, getStorageBackendBaseUrl());
-  if (searchParams) {
-    url.search = searchParams.toString();
-  }
-  return url.toString();
+const getFileUploadBaseUrl = () => {
+  const configuredBaseUrl = import.meta.env.VITE_APP_FILE_UPLOAD_URL?.trim();
+  return configuredBaseUrl || window.location.origin;
+};
+
+const createStorageUrl = (path: string) => {
+  return new URL(`${API_PREFIX}${path}`, getStorageBackendBaseUrl()).toString();
 };
 
 const getErrorMessage = async (response: Response) => {
   try {
     const data = await response.json();
-    if (typeof data?.error === "string") {
+    if (typeof data?.msg === "string" && data.msg) {
+      return data.msg;
+    }
+    if (typeof data?.error === "string" && data.error) {
       return data.error;
     }
   } catch {
@@ -62,22 +52,49 @@ const getErrorMessage = async (response: Response) => {
   return `Request failed with status ${response.status}`;
 };
 
-const bytesToBase64 = (bytes: Uint8Array) => {
-  let binary = "";
-  const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+const sceneFileUrlsCache = new Map<string, Record<string, string>>();
+
+const normalizeUploadedFileUrl = (url: string) => {
+  const assetHost = import.meta.env.VITE_APP_FILE_UPLOAD_ASSET_PREFIX?.trim();
+  if (!assetHost || /^https?:\/\//i.test(url)) {
+    return url;
   }
-  return btoa(binary);
+  return new URL(url.replace(/^\//, ""), `${assetHost.replace(/\/+$/, "")}/`)
+    .toString();
 };
 
-const base64ToBytes = (value: string) => {
-  const binary = atob(value);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
+const uploadFileToHttpService = async (file: File): Promise<UploadFileResult> => {
+  const uploadCode =
+    import.meta.env.VITE_APP_FILE_UPLOAD_CODE?.trim() || "default";
+  const uploadPath =
+    import.meta.env.VITE_APP_FILE_UPLOAD_PATH?.trim() ||
+    "/function/oss/upload/single/file";
+
+  const formData = new FormData();
+  formData.append("code", uploadCode);
+  formData.append("file", file, file.name || "upload.bin");
+
+  const url = new URL(uploadPath, getFileUploadBaseUrl());
+
+  const response = await fetch(url.toString(), {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    throw new Error(await getErrorMessage(response));
   }
-  return bytes;
+
+  const result = await response.json();
+  if (!result?.success || !result?.data?.url) {
+    throw new Error(result?.msg || "Upload failed");
+  }
+
+  return {
+    contentType: result.data.contentType || file.type,
+    fileName: result.data.fileName || file.name,
+    url: normalizeUploadedFileUrl(result.data.url),
+  };
 };
 
 const fetchScene = async (roomId: string): Promise<StoredScenePayload | null> => {
@@ -104,81 +121,42 @@ const putScene = async (roomId: string, scene: StoredScenePayload) => {
   }
 };
 
-const putFile = async ({
-  fileId,
-  prefix,
-  buffer,
-  contentType,
-  metadata,
+const getSceneCacheKey = (prefix: string) => {
+  const match = prefix.match(/\/rooms\/([^/]+)$/);
+  return match?.[1] || prefix;
+};
+
+const cacheSceneFileUrls = (
+  cacheKey: string,
+  fileUrls: Record<string, string> | undefined,
+) => {
+  if (fileUrls) {
+    sceneFileUrlsCache.set(cacheKey, fileUrls);
+  }
+};
+
+const getCachedSceneFileUrls = (prefix: string) => {
+  return sceneFileUrlsCache.get(getSceneCacheKey(prefix)) || {};
+};
+
+const blobToBinaryFileData = async ({
+  id,
+  blob,
 }: {
-  fileId: FileId;
-  prefix: string;
-  buffer: Uint8Array;
-  contentType?: string;
-  metadata?: Record<string, string>;
-}) => {
-  const searchParams = new URLSearchParams({ prefix });
-  if (metadata) {
-    searchParams.set("metadata", JSON.stringify(metadata));
-  }
-  const response = await fetch(
-    createStorageUrl(`/files/${encodeURIComponent(fileId)}`, searchParams),
-    {
-      method: "PUT",
-      headers: {
-        "Content-Type": contentType || "application/octet-stream",
-        "Cache-Control": `public, max-age=${FILE_CACHE_MAX_AGE_SEC}`,
-      },
-      body: buffer,
-    },
-  );
-  if (!response.ok) {
-    throw new Error(await getErrorMessage(response));
-  }
-};
+  id: FileId;
+  blob: Blob;
+}): Promise<BinaryFileData> => {
+  const mimeType =
+    ((await getMimeType(blob, null)) as BinaryFileData["mimeType"]) ||
+    MIME_TYPES.binary;
 
-const getFile = async ({
-  fileId,
-  prefix,
-}: {
-  fileId: FileId;
-  prefix: string;
-}) => {
-  const response = await fetch(
-    createStorageUrl(
-      `/files/${encodeURIComponent(fileId)}`,
-      new URLSearchParams({ prefix }),
-    ),
-  );
-  if (!response.ok) {
-    throw new Error(await getErrorMessage(response));
-  }
-  return new Uint8Array(await response.arrayBuffer());
-};
-
-const encryptElements = async (
-  key: string,
-  elements: readonly ExcalidrawElement[],
-): Promise<{ ciphertext: ArrayBuffer; iv: Uint8Array }> => {
-  const json = JSON.stringify(elements);
-  const encoded = new TextEncoder().encode(json);
-  const { encryptedBuffer, iv } = await encryptData(key, encoded);
-
-  return { ciphertext: encryptedBuffer, iv };
-};
-
-const decryptElements = async (
-  data: StoredScenePayload,
-  roomKey: string,
-): Promise<readonly ExcalidrawElement[]> => {
-  const ciphertext = base64ToBytes(data.ciphertext);
-  const iv = base64ToBytes(data.iv);
-
-  const decrypted = await decryptData(iv, ciphertext, roomKey);
-  const decodedData = new TextDecoder("utf-8").decode(
-    new Uint8Array(decrypted),
-  );
-  return JSON.parse(decodedData);
+  return {
+    id,
+    dataURL: (await getDataURL(blob)) as DataURL,
+    mimeType,
+    created: Date.now(),
+    lastRetrieved: Date.now(),
+  };
 };
 
 class FirebaseSceneVersionCache {
@@ -199,24 +177,17 @@ export const loadFirebaseStorage = async () => {
 };
 
 export const uploadBlobToStorage = async ({
-  prefix,
   fileId,
   blob,
-  metadata,
 }: {
   prefix: string;
   fileId: string;
   blob: Blob;
   metadata?: Record<string, string>;
 }) => {
-  const buffer = new Uint8Array(await blob.arrayBuffer());
-  await putFile({
-    fileId: fileId as FileId,
-    prefix,
-    buffer,
-    contentType: blob.type || "application/octet-stream",
-    metadata,
-  });
+  await uploadFileToHttpService(
+    new File([blob], fileId, { type: blob.type || "application/octet-stream" }),
+  );
 };
 
 export const isSavedToFirebase = (
@@ -225,7 +196,6 @@ export const isSavedToFirebase = (
 ): boolean => {
   if (portal.socket && portal.roomId && portal.roomKey) {
     const sceneVersion = getSceneVersion(elements);
-
     return FirebaseSceneVersionCache.get(portal.socket) === sceneVersion;
   }
   return true;
@@ -240,15 +210,18 @@ export const saveFilesToFirebase = async ({
 }) => {
   const erroredFiles: FileId[] = [];
   const savedFiles: FileId[] = [];
+  const uploadedUrls: Record<string, string> = {};
 
   await Promise.all(
     files.map(async ({ id, buffer }) => {
       try {
-        await putFile({
-          fileId: id,
-          prefix,
-          buffer,
+        const blob = new Blob([buffer], {
+          type: "application/octet-stream",
         });
+        const uploadResult = await uploadFileToHttpService(
+          new File([blob], id, { type: blob.type }),
+        );
+        uploadedUrls[id] = uploadResult.url;
         savedFiles.push(id);
       } catch {
         erroredFiles.push(id);
@@ -256,64 +229,50 @@ export const saveFilesToFirebase = async ({
     }),
   );
 
-  return { savedFiles, erroredFiles };
-};
+  const cacheKey = getSceneCacheKey(prefix);
+  if (Object.keys(uploadedUrls).length) {
+    sceneFileUrlsCache.set(cacheKey, {
+      ...sceneFileUrlsCache.get(cacheKey),
+      ...uploadedUrls,
+    });
+  }
 
-const createStoredScene = async (
-  elements: readonly SyncableExcalidrawElement[],
-  roomKey: string,
-) => {
-  const sceneVersion = getSceneVersion(elements);
-  const { ciphertext, iv } = await encryptElements(roomKey, elements);
-  return {
-    sceneVersion,
-    ciphertext: bytesToBase64(new Uint8Array(ciphertext)),
-    iv: bytesToBase64(iv),
-  } satisfies StoredScenePayload;
+  return { savedFiles, erroredFiles };
 };
 
 export const saveToFirebase = async (
   portal: Portal,
   elements: readonly SyncableExcalidrawElement[],
-  appState: AppState,
 ) => {
-  const { roomId, roomKey, socket } = portal;
-  if (!roomId || !roomKey || !socket || isSavedToFirebase(portal, elements)) {
+  const { roomId, socket } = portal;
+  if (!roomId || !socket || isSavedToFirebase(portal, elements)) {
     return null;
   }
 
-  const existingScene = await fetchScene(roomId);
-  let elementsToStore = elements;
+  const cacheKey = getSceneCacheKey(`files/rooms/${roomId}`);
+  const fileUrls = sceneFileUrlsCache.get(cacheKey) || {};
 
-  if (existingScene) {
-    const prevStoredElements = getSyncableElements(
-      restoreElements(await decryptElements(existingScene, roomKey), null),
-    );
+  const storedScene: StoredScenePayload = {
+    elements,
+    fileUrls,
+  };
 
-    elementsToStore = getSyncableElements(
-      reconcileElements(
-        elements,
-        prevStoredElements as OrderedExcalidrawElement[] as RemoteExcalidrawElement[],
-        appState,
-      ),
-    );
-  }
-
-  const storedScene = await createStoredScene(elementsToStore, roomKey);
   await putScene(roomId, storedScene);
 
-  const storedElements = getSyncableElements(
-    restoreElements(await decryptElements(storedScene, roomKey), null),
+  const restoredElements = toBrandedType(
+    restoreElements(storedScene.elements, null, {
+      deleteInvisibleElements: true,
+    }),
   );
 
-  FirebaseSceneVersionCache.set(socket, storedElements);
+  FirebaseSceneVersionCache.set(socket, restoredElements);
 
-  return toBrandedType<RemoteExcalidrawElement[]>(storedElements);
+  return restoredElements;
 };
 
 export const loadFromFirebase = async (
   roomId: string,
-  roomKey: string,
+  _roomKey: string,
   socket: Socket | null,
 ): Promise<readonly SyncableExcalidrawElement[] | null> => {
   const storedScene = await fetchScene(roomId);
@@ -321,8 +280,10 @@ export const loadFromFirebase = async (
     return null;
   }
 
-  const elements = getSyncableElements(
-    restoreElements(await decryptElements(storedScene, roomKey), null, {
+  cacheSceneFileUrls(roomId, storedScene.fileUrls);
+
+  const elements = toBrandedType(
+    restoreElements(storedScene.elements, null, {
       deleteInvisibleElements: true,
     }),
   );
@@ -336,36 +297,34 @@ export const loadFromFirebase = async (
 
 export const loadFilesFromFirebase = async (
   prefix: string,
-  decryptionKey: string,
+  _decryptionKey: string,
   filesIds: readonly FileId[],
 ) => {
   const loadedFiles: BinaryFileData[] = [];
   const erroredFiles = new Map<FileId, true>();
+  const fileUrls = getCachedSceneFileUrls(prefix);
 
   await Promise.all(
     [...new Set(filesIds)].map(async (id) => {
+      const url = fileUrls[id];
+      if (!url) {
+        erroredFiles.set(id, true);
+        return;
+      }
+
       try {
-        const arrayBuffer = await getFile({
-          fileId: id,
-          prefix,
-        });
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch file ${id}`);
+        }
 
-        const { data, metadata } = await decompressData<BinaryFileMetadata>(
-          arrayBuffer,
-          {
-            decryptionKey,
-          },
+        const blob = await response.blob();
+        loadedFiles.push(
+          await blobToBinaryFileData({
+            id,
+            blob,
+          }),
         );
-
-        const dataURL = new TextDecoder().decode(data) as DataURL;
-
-        loadedFiles.push({
-          mimeType: metadata.mimeType || MIME_TYPES.binary,
-          id,
-          dataURL,
-          created: metadata?.created || Date.now(),
-          lastRetrieved: metadata?.created || Date.now(),
-        });
       } catch (error: any) {
         erroredFiles.set(id, true);
         console.error(error);

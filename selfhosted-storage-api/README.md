@@ -1,11 +1,11 @@
 # Self-hosted Storage API
 
-This service replaces the Firebase scene and file storage used by `excalidraw-app`.
+This service replaces the Firebase scene storage used by `excalidraw-app`.
 
 It stores:
 
-- encrypted room scenes as JSON objects in S3 under `scenes/<roomId>.json`
-- encrypted image/file blobs in S3 under `<prefix>/<fileId>`
+- room scenes as JSON files under `scenes/<roomId>.json`
+- file URL mappings together with the scene payload
 
 ## Environment variables
 
@@ -14,15 +14,8 @@ PORT=3015
 API_PREFIX=/api/v1
 CORS_ORIGIN=https://whiteboard.example.com
 
-S3_BUCKET=excalidraw
-S3_REGION=us-east-1
-S3_ENDPOINT=
-S3_FORCE_PATH_STYLE=false
-S3_ACCESS_KEY_ID=
-S3_SECRET_ACCESS_KEY=
+STORAGE_DIR=/tmp/excalidraw-storage
 ```
-
-`S3_ENDPOINT` and `S3_FORCE_PATH_STYLE=true` are useful for MinIO and other S3-compatible storage.
 
 ## Run locally
 
@@ -42,6 +35,48 @@ VITE_APP_STORAGE_BACKEND_URL=http://localhost:3015
 
 If you reverse proxy the API under the same origin as the frontend, you can leave
 `VITE_APP_STORAGE_BACKEND_URL` unset and route `/api/v1/*` to this service.
+
+Image/file uploads are expected to go directly to your external HTTP upload
+service. The frontend variables for that are:
+
+```bash
+VITE_APP_FILE_UPLOAD_URL=http://school.rocpow.com:9000
+VITE_APP_FILE_UPLOAD_PATH=/function/oss/upload/single/file
+VITE_APP_FILE_UPLOAD_CODE=default
+VITE_APP_FILE_UPLOAD_ASSET_PREFIX=http://school.rocpow.com:9000
+```
+
+## Docker Compose
+
+The repository-level `docker-compose.yml` is set up for a same-origin HTTP stack:
+
+- `excalidraw` serves the frontend on port `3000`
+- `/api/v1/*` is proxied to `storage-api`
+- `/socket.io/*` is proxied to the collaboration server
+- image/file uploads go directly to your external HTTP upload service
+- `collab` is built from the vendored `vendor/excalidraw-room` source in this repository
+- scene JSON files are persisted to the host directory `./data/storage`
+
+Start the stack from the repo root:
+
+```bash
+docker compose up --build
+```
+
+Then open:
+
+```text
+http://localhost:3000
+```
+
+The collaboration service is built from vendored source, so `docker compose build`
+does not need GitHub access for the `collab` image itself.
+
+With the default compose setup, scene files are stored on the host at:
+
+```text
+./data/storage/scenes/<roomId>.json
+```
 
 ## Example Nginx routing
 

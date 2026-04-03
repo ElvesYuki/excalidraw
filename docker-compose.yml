@@ -3,21 +3,36 @@ services:
     build:
       context: .
       args:
-        - NODE_ENV=development
-    container_name: excalidraw
+        NODE_ENV: production
+        VITE_APP_WS_SERVER_URL: ""
+        VITE_APP_STORAGE_BACKEND_URL: ""
+        VITE_APP_FILE_UPLOAD_URL: "http://school.rocpow.com:9000"
+        VITE_APP_FILE_UPLOAD_PATH: "/function/oss/upload/single/file"
+        VITE_APP_FILE_UPLOAD_CODE: "default"
+        VITE_APP_FILE_UPLOAD_ASSET_PREFIX: "http://school.rocpow.com:9000"
     ports:
       - "3000:80"
-    restart: on-failure
-    stdin_open: true
-    healthcheck:
-      disable: true
-    environment:
-      - NODE_ENV=development
-    volumes:
-      - ./:/opt/node_app/app:delegated
-      - ./package.json:/opt/node_app/package.json
-      - ./yarn.lock:/opt/node_app/yarn.lock
-      - notused:/opt/node_app/app/node_modules
+    restart: unless-stopped
+    depends_on:
+      storage-api:
+        condition: service_started
+      collab:
+        condition: service_started
 
-volumes:
-  notused:
+  storage-api:
+    build:
+      context: ./selfhosted-storage-api
+    restart: unless-stopped
+    environment:
+      PORT: 3015
+      API_PREFIX: /api/v1
+      CORS_ORIGIN: "*"
+      STORAGE_DIR: /data
+    volumes:
+      - ./data/storage:/data
+
+  collab:
+    build:
+      context: .
+      dockerfile: collab/Dockerfile
+    restart: unless-stopped
