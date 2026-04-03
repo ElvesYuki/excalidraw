@@ -40,7 +40,7 @@ Image/file uploads are expected to go directly to your external HTTP upload
 service. The frontend variables for that are:
 
 ```bash
-VITE_APP_FILE_UPLOAD_URL=http://school.rocpow.com:9000
+VITE_APP_FILE_UPLOAD_URL=http://school.rocpow.com:9081
 VITE_APP_FILE_UPLOAD_PATH=/function/oss/upload/single/file
 VITE_APP_FILE_UPLOAD_CODE=default
 VITE_APP_FILE_UPLOAD_ASSET_PREFIX=http://school.rocpow.com:9000
@@ -50,7 +50,7 @@ VITE_APP_FILE_UPLOAD_ASSET_PREFIX=http://school.rocpow.com:9000
 
 The repository-level `docker-compose.yml` is set up for a same-origin HTTP stack:
 
-- `excalidraw` serves the frontend on port `3000`
+- `excalidraw` serves the frontend on host port `13000`
 - `/api/v1/*` is proxied to `storage-api`
 - `/socket.io/*` is proxied to the collaboration server
 - image/file uploads go directly to your external HTTP upload service
@@ -66,7 +66,7 @@ docker compose up --build
 Then open:
 
 ```text
-http://localhost:3000
+http://localhost:13000
 ```
 
 The collaboration service is built from vendored source, so `docker compose build`

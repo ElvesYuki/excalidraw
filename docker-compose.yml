@@ -6,12 +6,12 @@ services:
         NODE_ENV: production
         VITE_APP_WS_SERVER_URL: ""
         VITE_APP_STORAGE_BACKEND_URL: ""
-        VITE_APP_FILE_UPLOAD_URL: "http://school.rocpow.com:9000"
+        VITE_APP_FILE_UPLOAD_URL: "http://school.rocpow.com:9081"
         VITE_APP_FILE_UPLOAD_PATH: "/function/oss/upload/single/file"
         VITE_APP_FILE_UPLOAD_CODE: "default"
         VITE_APP_FILE_UPLOAD_ASSET_PREFIX: "http://school.rocpow.com:9000"
     ports:
-      - "3000:80"
+      - "13000:80"
     restart: unless-stopped
     depends_on:
       storage-api:
