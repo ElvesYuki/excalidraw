@@ -37,7 +37,7 @@ import {
 
 import { encodeFilesForUpload } from "./FileManager";
 import { saveFilesToFirebase } from "./firebase";
-import { authorizedFetch } from "../auth/api";
+import { authorizedFetch, requireAuthToken } from "../auth/api";
 
 import type { WS_SUBTYPES } from "../app_constants";
 
@@ -267,6 +267,7 @@ export const exportToBackend = async (
   appState: Partial<AppState>,
   files: BinaryFiles,
 ): Promise<ExportToBackendResult> => {
+  requireAuthToken("生成分享链接前，请先登录");
   const encryptionKey = await generateEncryptionKey("string");
 
   const payload = await compressData(

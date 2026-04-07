@@ -1,6 +1,12 @@
 import { clearStoredAuthToken, getStoredAuthToken, setStoredAuthToken } from "./session";
 
-import type { AuthUser } from "./types";
+import type {
+  AuthChangePasswordPayload,
+  AuthRegisterPayload,
+  AuthResetPasswordPayload,
+  AuthResetPasswordResult,
+  AuthUser,
+} from "./types";
 
 const API_PREFIX = "/api/v1";
 const AUTH_UNAUTHORIZED_EVENT = "backend-auth-unauthorized";
@@ -20,19 +26,52 @@ export const getAuthLoginUrl = () =>
   import.meta.env.VITE_APP_BACKEND_AUTH_LOGIN_URL?.trim() ||
   createBackendUrl(`${API_PREFIX}/auth/login`);
 
+export const getAuthRegisterUrl = () =>
+  import.meta.env.VITE_APP_BACKEND_AUTH_REGISTER_URL?.trim() ||
+  createBackendUrl(`${API_PREFIX}/auth/register`);
+
 export const getAuthMeUrl = () =>
   import.meta.env.VITE_APP_BACKEND_AUTH_ME_URL?.trim() ||
   createBackendUrl(`${API_PREFIX}/auth/me`);
 
+export const getAuthChangePasswordUrl = () =>
+  import.meta.env.VITE_APP_BACKEND_AUTH_CHANGE_PASSWORD_URL?.trim() ||
+  createBackendUrl(`${API_PREFIX}/auth/change-password`);
+
+export const getAuthResetPasswordUrl = () =>
+  import.meta.env.VITE_APP_BACKEND_AUTH_RESET_PASSWORD_URL?.trim() ||
+  createBackendUrl(`${API_PREFIX}/auth/reset-password`);
+
 export const getStoredToken = () => getStoredAuthToken();
 
-const emitUnauthorized = () => {
-  window.dispatchEvent(new CustomEvent(AUTH_UNAUTHORIZED_EVENT));
+const emitUnauthorized = (message?: string) => {
+  window.dispatchEvent(
+    new CustomEvent(AUTH_UNAUTHORIZED_EVENT, {
+      detail: { message },
+    }),
+  );
 };
 
-export const onUnauthorized = (listener: () => void) => {
-  window.addEventListener(AUTH_UNAUTHORIZED_EVENT, listener);
-  return () => window.removeEventListener(AUTH_UNAUTHORIZED_EVENT, listener);
+export const onUnauthorized = (listener: (message?: string) => void) => {
+  const handler = (event: Event) => {
+    const customEvent = event as CustomEvent<{ message?: string }>;
+    listener(customEvent.detail?.message);
+  };
+  window.addEventListener(AUTH_UNAUTHORIZED_EVENT, handler as EventListener);
+  return () =>
+    window.removeEventListener(
+      AUTH_UNAUTHORIZED_EVENT,
+      handler as EventListener,
+    );
+};
+
+export const requireAuthToken = (message: string) => {
+  const token = getStoredAuthToken();
+  if (!token) {
+    emitUnauthorized(message);
+    throw new Error(message);
+  }
+  return token;
 };
 
 export const fetchAuthStatus = async () => {
@@ -76,6 +115,32 @@ export const loginWithPassword = async (username: string, password: string) => {
   return token;
 };
 
+export const registerWithPassword = async (
+  payload: AuthRegisterPayload,
+): Promise<AuthUser> => {
+  const response = await fetch(getAuthRegisterUrl(), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    let message = "注册失败";
+    try {
+      const json = await response.json();
+      message = json?.error || json?.msg || message;
+    } catch {
+      // noop
+    }
+    throw new Error(message);
+  }
+
+  const json = await response.json();
+  return json?.data?.user as AuthUser;
+};
+
 export const logoutBackend = () => {
   clearStoredAuthToken();
 };
@@ -112,10 +177,58 @@ export const fetchCurrentUser = async (): Promise<AuthUser> => {
   return json?.data as AuthUser;
 };
 
+export const changePassword = async (payload: AuthChangePasswordPayload) => {
+  const response = await authorizedFetch(getAuthChangePasswordUrl(), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    let message = "修改密码失败";
+    try {
+      const json = await response.json();
+      message = json?.error || json?.msg || message;
+    } catch {
+      // noop
+    }
+    throw new Error(message);
+  }
+};
+
+export const resetPassword = async (
+  payload: AuthResetPasswordPayload,
+): Promise<AuthResetPasswordResult> => {
+  const response = await fetch(getAuthResetPasswordUrl(), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    let message = "重置密码失败";
+    try {
+      const json = await response.json();
+      message = json?.error || json?.msg || message;
+    } catch {
+      // noop
+    }
+    throw new Error(message);
+  }
+
+  const json = await response.json();
+  return json?.data as AuthResetPasswordResult;
+};
+
 export const buildAuthorizedWsUrl = async (url: string) => {
   const token = getStoredAuthToken();
   if (!token) {
-    return url;
+    emitUnauthorized("进入实时协作前，请先登录");
+    throw new Error("进入实时协作前，请先登录");
   }
   const wsUrl = new URL(url, window.location.origin);
   wsUrl.searchParams.set("token", token);

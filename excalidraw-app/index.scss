@@ -78,6 +78,36 @@
       color: var(--color-danger-text);
     }
   }
+
+  .backend-top-right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .excalidraw-ui-top-right {
+    flex: 0 0 auto;
+    margin-inline-end: 0.35rem;
+  }
+
+  .backend-top-right__collab,
+  .backend-top-right__account {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+  }
+
+  .backend-top-right__collab .collab-button:has(.CollabButton-collaborators) {
+    padding-inline-end: 0.45rem;
+  }
+
+  .backend-top-right__collab--with-badge {
+    margin-inline-end: 0.2rem;
+  }
+
+  .backend-top-right__account {
+    margin-inline-start: 0.5rem;
+  }
 }
 
 .excalidraw-app.is-collaborating {

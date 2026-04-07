@@ -18,6 +18,7 @@ import { ErrorDialog } from "@excalidraw/excalidraw/components/ErrorDialog";
 import { OverwriteConfirmDialog } from "@excalidraw/excalidraw/components/OverwriteConfirm/OverwriteConfirm";
 import { openConfirmModal } from "@excalidraw/excalidraw/components/OverwriteConfirm/OverwriteConfirmState";
 import { ShareableLinkDialog } from "@excalidraw/excalidraw/components/ShareableLinkDialog";
+import { useUIAppState } from "@excalidraw/excalidraw/context/ui-appState";
 import Trans from "@excalidraw/excalidraw/components/Trans";
 import {
   APP_NAME,
@@ -147,6 +148,8 @@ import "./index.scss";
 
 import { ExcalidrawPlusPromoBanner } from "./components/ExcalidrawPlusPromoBanner";
 import { AppSidebar } from "./components/AppSidebar";
+import { AuthDialog } from "./auth/AuthDialog";
+import { useAuth } from "./auth/AuthGate";
 import { AuthUserMenu } from "./auth/AuthUserMenu";
 
 import type { CollabAPI } from "./collab/Collab";
@@ -374,6 +377,8 @@ const initializeScene = async (opts: {
 
 const ExcalidrawWrapper = () => {
   const excalidrawAPI = useExcalidrawAPI();
+  const uiAppState = useUIAppState();
+  const collaboratorCount = uiAppState?.collaborators?.size ?? 0;
 
   const [errorMessage, setErrorMessage] = useState("");
   const isCollabDisabled = isRunningInIframe();
@@ -731,12 +736,39 @@ const ExcalidrawWrapper = () => {
   const [latestShareableLink, setLatestShareableLink] = useState<string | null>(
     null,
   );
+  const auth = useAuth();
+
+  const ensureAuthenticated = useCallback(
+    (message: string, action: () => void) => {
+      if (!auth || auth.authState.status === "disabled") {
+        action();
+        return;
+      }
+
+      if (auth.authState.status !== "authenticated") {
+        auth.promptLogin(message);
+        return;
+      }
+
+      action();
+    },
+    [auth],
+  );
 
   const onExportToBackend = async (
     exportedElements: readonly NonDeletedExcalidrawElement[],
     appState: Partial<AppState>,
     files: BinaryFiles,
   ) => {
+    if (
+      auth &&
+      auth.authState.status !== "disabled" &&
+      auth.authState.status !== "authenticated"
+    ) {
+      auth.promptLogin("生成分享链接前，请先登录");
+      throw new Error("生成分享链接前，请先登录");
+    }
+
     if (exportedElements.length === 0) {
       throw new Error(t("alerts.cannotExportEmptyCanvas"));
     }
@@ -790,8 +822,11 @@ const ExcalidrawWrapper = () => {
   const localStorageQuotaExceeded = useAtomValue(localStorageQuotaExceededAtom);
 
   const onCollabDialogOpen = useCallback(
-    () => setShareDialogState({ isOpen: true, type: "collaborationOnly" }),
-    [setShareDialogState],
+    () =>
+      ensureAuthenticated("开始实时协作前，请先登录", () =>
+        setShareDialogState({ isOpen: true, type: "collaborationOnly" }),
+      ),
+    [ensureAuthenticated, setShareDialogState],
   );
 
   // ---------------------------------------------------------------------------
@@ -966,15 +1001,30 @@ const ExcalidrawWrapper = () => {
                 />
               )}
 
-              {collabError.message && <CollabError collabError={collabError} />}
-              <LiveCollaborationTrigger
-                isCollaborating={isCollaborating}
-                onSelect={() =>
-                  setShareDialogState({ isOpen: true, type: "share" })
-                }
-                editorInterface={editorInterface}
-              />
-              <AuthUserMenu />
+              <div className="backend-top-right">
+                <div
+                  className={clsx("backend-top-right__collab", {
+                    "backend-top-right__collab--with-badge":
+                      collaboratorCount > 0,
+                  })}
+                >
+                  {collabError.message && (
+                    <CollabError collabError={collabError} />
+                  )}
+                  <LiveCollaborationTrigger
+                    isCollaborating={isCollaborating}
+                    onSelect={() =>
+                      ensureAuthenticated("分享或协作前，请先登录", () =>
+                        setShareDialogState({ isOpen: true, type: "share" }),
+                      )
+                    }
+                    editorInterface={editorInterface}
+                  />
+                </div>
+                <div className="backend-top-right__account">
+                  <AuthUserMenu />
+                </div>
+              </div>
             </div>
           );
         }}
@@ -1058,6 +1108,8 @@ const ExcalidrawWrapper = () => {
             }
           }}
         />
+
+        <AuthDialog />
 
         <AppSidebar />
 

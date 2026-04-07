@@ -1,19 +1,20 @@
 import { createContext, useContext, useEffect, useState } from "react";
 
-import type { FormEvent, ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import {
+  changePassword,
   fetchAuthStatus,
   fetchCurrentUser,
   getStoredToken,
   loginWithPassword,
   logoutBackend,
   onUnauthorized,
+  registerWithPassword,
+  resetPassword,
 } from "./api";
 
-import type { AuthUser } from "./types";
-
-import "./AuthGate.scss";
+import type { AuthResetPasswordResult, AuthUser } from "./types";
 
 type AuthGateProps = {
   children: ReactNode;
@@ -23,22 +24,71 @@ type AuthState =
   | { status: "loading" }
   | { status: "disabled" }
   | { status: "authenticated"; user: AuthUser }
-  | { status: "anonymous"; errorMessage?: string };
+  | { status: "anonymous"; errorMessage?: string; successMessage?: string };
+
+type AuthDialogMessage = {
+  type: "error" | "success";
+  text: string;
+};
 
 type AuthContextValue = {
   authState: AuthState;
   logout: () => void;
+  refreshCurrentUser: () => Promise<void>;
+  changePassword: (oldPassword: string, newPassword: string) => Promise<void>;
+  resetPassword: (username: string) => Promise<AuthResetPasswordResult>;
+  authDialogMode: "login" | "register";
+  isAuthDialogOpen: boolean;
+  authMessage?: AuthDialogMessage;
+  openAuthDialog: (mode?: "login" | "register") => void;
+  promptLogin: (message: string) => void;
+  closeAuthDialog: () => void;
+  setAuthDialogMode: (mode: "login" | "register") => void;
+  clearAuthMessage: () => void;
+  login: (username: string, password: string) => Promise<void>;
+  register: (payload: {
+    username: string;
+    password: string;
+    displayName?: string;
+  }) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+const MIN_USERNAME_LENGTH = 3;
+const MIN_PASSWORD_LENGTH = 8;
+
+const getUsernameError = (value: string) => {
+  if (!value.trim()) {
+    return "请输入用户名";
+  }
+  if (value.trim().length < MIN_USERNAME_LENGTH) {
+    return `用户名至少需要 ${MIN_USERNAME_LENGTH} 个字符`;
+  }
+  return "";
+};
+
+const getPasswordError = (value: string) => {
+  if (!value.trim()) {
+    return "请输入密码";
+  }
+  if (value.trim().length < MIN_PASSWORD_LENGTH) {
+    return `密码至少需要 ${MIN_PASSWORD_LENGTH} 个字符`;
+  }
+  return "";
+};
 
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthGate = ({ children }: AuthGateProps) => {
   const [authState, setAuthState] = useState<AuthState>({ status: "loading" });
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [authDialogMode, setAuthDialogMode] = useState<"login" | "register">(
+    "login",
+  );
+  const [isAuthDialogOpen, setIsAuthDialogOpen] = useState(false);
+  const [authMessage, setAuthMessage] = useState<AuthDialogMessage | undefined>(
+    undefined,
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -75,21 +125,28 @@ export const AuthGate = ({ children }: AuthGateProps) => {
         if (!isMounted) {
           return;
         }
+        const message =
+          error instanceof Error ? error.message : "认证初始化失败";
         setAuthState({
           status: "anonymous",
-          errorMessage: error instanceof Error ? error.message : "认证初始化失败",
+          errorMessage: message,
         });
+        setAuthMessage({ type: "error", text: message });
       }
     };
 
     initialize();
 
-    const unsubscribe = onUnauthorized(() => {
+    const unsubscribe = onUnauthorized((message) => {
       logoutBackend();
+      const errorMessage = message || "登录已失效，请重新登录";
       setAuthState({
         status: "anonymous",
-        errorMessage: "登录已失效，请重新登录",
+        errorMessage,
       });
+      setAuthMessage({ type: "error", text: errorMessage });
+      setAuthDialogMode("login");
+      setIsAuthDialogOpen(true);
     });
 
     return () => {
@@ -98,230 +155,124 @@ export const AuthGate = ({ children }: AuthGateProps) => {
     };
   }, []);
 
-  const handleLogout = () => {
-    logoutBackend();
-    setAuthState({ status: "anonymous" });
+  const refreshCurrentUser = async () => {
+    const user = await fetchCurrentUser();
+    setAuthState({ status: "authenticated", user });
   };
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setIsSubmitting(true);
-    try {
-      await loginWithPassword(username, password);
-      const user = await fetchCurrentUser();
-      setAuthState({ status: "authenticated", user });
-      setPassword("");
-    } catch (error) {
-      setAuthState({
-        status: "anonymous",
-        errorMessage: error instanceof Error ? error.message : "登录失败",
-      });
-    } finally {
-      setIsSubmitting(false);
+  const openAuthDialog = (mode: "login" | "register" = "login") => {
+    setAuthDialogMode(mode);
+    setIsAuthDialogOpen(true);
+  };
+
+  const promptLogin = (message: string) => {
+    setAuthMessage({ type: "error", text: message });
+    setAuthDialogMode("login");
+    setIsAuthDialogOpen(true);
+  };
+
+  const closeAuthDialog = () => {
+    setIsAuthDialogOpen(false);
+  };
+
+  const clearAuthMessage = () => {
+    setAuthMessage(undefined);
+    if (authState.status === "anonymous") {
+      setAuthState({ status: "anonymous" });
     }
   };
 
-  const isDisabled = authState.status === "disabled";
-  const isAuthenticated = authState.status === "authenticated";
-  const showOverlay = !isDisabled && !isAuthenticated;
-  const dialogContentStyle = {
-    position: "relative" as const,
-    zIndex: 2,
-    width: "100%",
-    maxWidth: "calc(100vw - 3rem)",
-    display: "flex",
-    justifyContent: "center",
-    pointerEvents: "auto" as const,
+  const handleLogout = () => {
+    logoutBackend();
+    setAuthState({ status: "anonymous", successMessage: "你已退出登录" });
+    setAuthMessage({ type: "success", text: "你已退出登录" });
+    setAuthDialogMode("login");
   };
-  const dialogPanelStyle = {
-    width: "34rem",
-    maxWidth: "calc(100vw - 3rem)",
-    boxSizing: "border-box" as const,
-    backgroundColor: "#ffffff",
-    border: "1px solid rgba(31, 31, 37, 0.12)",
-    outline: "1px solid rgba(31, 31, 37, 0.04)",
-    boxShadow: "0 24px 80px rgba(0, 0, 0, 0.14)",
-    borderRadius: "16px",
-    padding: "24px",
-    overflow: "hidden" as const,
-    opacity: 1,
-    filter: "none",
-    transform: "none",
+
+  const login = async (username: string, password: string) => {
+    const usernameError = getUsernameError(username);
+    const passwordError = getPasswordError(password);
+
+    if (usernameError) {
+      setAuthState({ status: "anonymous", errorMessage: usernameError });
+      setAuthMessage({ type: "error", text: usernameError });
+      throw new Error(usernameError);
+    }
+    if (passwordError) {
+      setAuthState({ status: "anonymous", errorMessage: passwordError });
+      setAuthMessage({ type: "error", text: passwordError });
+      throw new Error(passwordError);
+    }
+
+    try {
+      await loginWithPassword(username, password);
+      await refreshCurrentUser();
+      setAuthMessage(undefined);
+      setIsAuthDialogOpen(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "登录失败";
+      setAuthState({ status: "anonymous", errorMessage: message });
+      setAuthMessage({ type: "error", text: message });
+      throw error;
+    }
   };
-  const dialogStyle = {
-    display: "grid",
-    gap: "1rem",
-    width: "100%",
-    minWidth: 0,
-  } as const;
-  const titleStyle = {
-    margin: "0 0 1.25rem",
-    padding: "0 0 0.9rem",
-    fontSize: "1.25rem",
-    fontWeight: 700,
-    lineHeight: 1.2,
-    color: "#1f1f25",
-    borderBottom: "1px solid rgba(31, 31, 37, 0.1)",
-  } as const;
-  const fieldStyle = {
-    display: "grid",
-    gap: "0.45rem",
-  } as const;
-  const labelStyle = {
-    fontSize: "0.95rem",
-    fontWeight: 600,
-    color: "#1f1f25",
-  } as const;
-  const inputShellStyle = {
-    boxSizing: "border-box" as const,
-    display: "flex",
-    alignItems: "center",
-    width: "100%",
-    minWidth: 0,
-    height: "3rem",
-    minHeight: "3rem",
-    maxHeight: "3rem",
-    border: "1.5px solid #c9ccdc",
-    borderRadius: "10px",
-    background: "#f5f7fb",
-    padding: "0 0.85rem",
-    overflow: "hidden" as const,
-    marginTop: "0",
-    boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 1px 2px rgba(15, 23, 42, 0.04)",
+
+  const register = async (payload: {
+    username: string;
+    password: string;
+    displayName?: string;
+  }) => {
+    const usernameError = getUsernameError(payload.username);
+    const passwordError = getPasswordError(payload.password);
+
+    if (usernameError) {
+      setAuthState({ status: "anonymous", errorMessage: usernameError });
+      setAuthMessage({ type: "error", text: usernameError });
+      throw new Error(usernameError);
+    }
+    if (passwordError) {
+      setAuthState({ status: "anonymous", errorMessage: passwordError });
+      setAuthMessage({ type: "error", text: passwordError });
+      throw new Error(passwordError);
+    }
+
+    try {
+      const createdUser = await registerWithPassword(payload);
+      const successMessage = `注册成功，请使用账号 ${createdUser.username} 登录`;
+      setAuthState({ status: "anonymous", successMessage });
+      setAuthMessage({ type: "success", text: successMessage });
+      setAuthDialogMode("login");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "注册失败";
+      setAuthState({ status: "anonymous", errorMessage: message });
+      setAuthMessage({ type: "error", text: message });
+      throw error;
+    }
   };
-  const inputStyle = {
-    display: "block",
-    width: "100%",
-    minWidth: 0,
-    height: "1.5rem",
-    minHeight: "1.5rem",
-    maxHeight: "1.5rem",
-    padding: 0,
-    margin: 0,
-    border: "none",
-    outline: "none",
-    background: "transparent",
-    boxShadow: "none",
-    color: "#1f1f25",
-    fontFamily: "Assistant, system-ui, sans-serif",
-    fontSize: "1rem",
-    fontWeight: 400,
-    lineHeight: 1.5,
-    appearance: "none" as const,
-    WebkitAppearance: "none" as const,
-    borderRadius: 0,
-    flex: "1 1 auto",
-    opacity: 1,
-  };
-  const formStyle = {
-    display: "grid",
-    gap: "1rem",
-  } as const;
-  const submitStyle = {
-    width: "100%",
-    minHeight: "3rem",
-    border: "1px solid #6965db",
-    background: "#6965db",
-    color: "#ffffff",
-    borderRadius: "10px",
-    fontSize: "1rem",
-    fontWeight: 600,
-  } as const;
+
   const authContextValue = {
     authState,
     logout: handleLogout,
+    refreshCurrentUser,
+    changePassword: async (oldPassword: string, newPassword: string) => {
+      await changePassword({ oldPassword, newPassword });
+    },
+    resetPassword: async (resetUsername: string) => {
+      return resetPassword({ username: resetUsername });
+    },
+    authDialogMode,
+    isAuthDialogOpen,
+    authMessage,
+    openAuthDialog,
+    promptLogin,
+    closeAuthDialog,
+    setAuthDialogMode,
+    clearAuthMessage,
+    login,
+    register,
   };
 
   return (
-    <AuthContext.Provider value={authContextValue}>
-      <>
-        {children}
-        {showOverlay && (
-          <div className="backend-auth-overlay" role="dialog" aria-modal="true">
-            <div className="backend-auth-overlay__backdrop" />
-            <div
-              className="backend-auth-overlay__content"
-              tabIndex={-1}
-              style={dialogContentStyle}
-            >
-              <div style={dialogPanelStyle}>
-                <div className="backend-auth-dialog__title" style={titleStyle}>
-                  登录后继续使用 Excalidraw
-                </div>
-                <div className="backend-auth-dialog" style={dialogStyle}>
-                  {authState.status === "loading" ? (
-                    <div className="backend-auth-dialog__loading">
-                      正在检查登录状态...
-                    </div>
-                  ) : (
-                    <form
-                      className="backend-auth-dialog__form"
-                      onSubmit={handleSubmit}
-                      style={formStyle}
-                    >
-                      <div className="backend-auth-dialog__field" style={fieldStyle}>
-                        <label htmlFor="backend-auth-username" style={labelStyle}>
-                          用户名
-                        </label>
-                        <div
-                          className="backend-auth-dialog__input-shell"
-                          style={inputShellStyle}
-                        >
-                          <input
-                            id="backend-auth-username"
-                            autoComplete="username"
-                            placeholder="请输入用户名"
-                            value={username}
-                            onChange={(event) => setUsername(event.target.value)}
-                            required
-                            style={inputStyle}
-                          />
-                        </div>
-                      </div>
-                      <div className="backend-auth-dialog__field" style={fieldStyle}>
-                        <label htmlFor="backend-auth-password" style={labelStyle}>
-                          密码
-                        </label>
-                        <div
-                          className="backend-auth-dialog__input-shell"
-                          style={inputShellStyle}
-                        >
-                          <input
-                            id="backend-auth-password"
-                            type="password"
-                            autoComplete="current-password"
-                            placeholder="请输入密码"
-                            value={password}
-                            onChange={(event) => setPassword(event.target.value)}
-                            required
-                            style={inputStyle}
-                          />
-                        </div>
-                      </div>
-                      {authState.status === "anonymous" &&
-                        authState.errorMessage && (
-                          <div className="backend-auth-dialog__error">
-                            {authState.errorMessage}
-                          </div>
-                        )}
-                      <div className="backend-auth-dialog__actions">
-                        <button
-                          className="backend-auth-dialog__submit"
-                          type="submit"
-                          disabled={isSubmitting}
-                          style={submitStyle}
-                        >
-                          {isSubmitting ? "登录中..." : "登录"}
-                        </button>
-                      </div>
-                    </form>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </>
-    </AuthContext.Provider>
+    <AuthContext.Provider value={authContextValue}>{children}</AuthContext.Provider>
   );
 };

@@ -22,7 +22,7 @@ import type {
 } from "@excalidraw/excalidraw/types";
 
 import { FILE_CACHE_MAX_AGE_SEC } from "../app_constants";
-import { authorizedFetch } from "../auth/api";
+import { authorizedFetch, requireAuthToken } from "../auth/api";
 
 import { getSyncableElements } from ".";
 
@@ -85,6 +85,7 @@ const base64ToBytes = (value: string) => {
 const fetchScene = async (
   roomId: string,
 ): Promise<StoredScenePayload | null> => {
+  requireAuthToken("进入实时协作前，请先登录");
   const response = await authorizedFetch(createStorageUrl(`/scenes/${roomId}`));
   if (response.status === 404) {
     return null;
@@ -96,6 +97,7 @@ const fetchScene = async (
 };
 
 const putScene = async (roomId: string, scene: StoredScenePayload) => {
+  requireAuthToken("保存协作场景前，请先登录");
   const response = await authorizedFetch(createStorageUrl(`/scenes/${roomId}`), {
     method: "PUT",
     headers: {
@@ -125,6 +127,7 @@ const putFile = async ({
   if (metadata) {
     searchParams.set("metadata", JSON.stringify(metadata));
   }
+  requireAuthToken("上传文件前，请先登录");
   const response = await authorizedFetch(
     createStorageUrl(`/files/${encodeURIComponent(fileId)}`, searchParams),
     {
@@ -148,6 +151,7 @@ const getFile = async ({
   fileId: FileId;
   prefix: string;
 }) => {
+  requireAuthToken("读取协作文件前，请先登录");
   const response = await authorizedFetch(
     createStorageUrl(
       `/files/${encodeURIComponent(fileId)}`,

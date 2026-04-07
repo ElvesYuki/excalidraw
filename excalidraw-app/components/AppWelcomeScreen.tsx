@@ -5,13 +5,29 @@ import { WelcomeScreen } from "@excalidraw/excalidraw/index";
 import React from "react";
 
 import { isExcalidrawPlusSignedUser } from "../app_constants";
+import { useAuth } from "../auth/AuthGate";
 
 export const AppWelcomeScreen: React.FC<{
   onCollabDialogOpen: () => any;
   isCollabEnabled: boolean;
 }> = React.memo((props) => {
   const { t } = useI18n();
+  const auth = useAuth();
   let headingContent;
+
+  const onSelectCollab = () => {
+    if (!auth || auth.authState.status === "disabled") {
+      props.onCollabDialogOpen();
+      return;
+    }
+
+    if (auth.authState.status !== "authenticated") {
+      auth.promptLogin("开始实时协作前，请先登录");
+      return;
+    }
+
+    props.onCollabDialogOpen();
+  };
 
   if (isExcalidrawPlusSignedUser) {
     headingContent = t("welcomeScreen.app.center_heading_plus")
@@ -60,8 +76,8 @@ export const AppWelcomeScreen: React.FC<{
           <WelcomeScreen.Center.MenuItemLoadScene />
           <WelcomeScreen.Center.MenuItemHelp />
           {props.isCollabEnabled && (
-            <WelcomeScreen.Center.MenuItemLiveCollaborationTrigger
-              onSelect={() => props.onCollabDialogOpen()}
+          <WelcomeScreen.Center.MenuItemLiveCollaborationTrigger
+              onSelect={onSelectCollab}
             />
           )}
           {!isExcalidrawPlusSignedUser && (

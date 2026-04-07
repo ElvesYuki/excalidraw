@@ -1,194 +1,5 @@
 @use "../../packages/excalidraw/css/variables.module" as *;
 
-.backend-auth-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1.5rem;
-}
-
-.backend-auth-overlay__backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(18, 18, 18, 0.32);
-  backdrop-filter: blur(2px);
-}
-
-.backend-auth-overlay__content {
-  position: relative;
-  z-index: 1;
-  width: min(100%, 34rem) !important;
-  max-width: 34rem !important;
-  background: var(--island-bg-color) !important;
-  border: 1px solid
-    color-mix(in srgb, var(--dialog-border-color) 78%, var(--color-gray-60)) !important;
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--dialog-border-color) 38%, transparent),
-    var(--modal-shadow) !important;
-  border-radius: 0.75rem !important;
-  padding: 1.5rem !important;
-  overflow: hidden !important;
-  box-sizing: border-box !important;
-}
-
-.backend-auth-dialog {
-  display: grid !important;
-  gap: 1rem !important;
-  min-width: 0 !important;
-  width: 100% !important;
-}
-
-.backend-auth-dialog__title {
-  margin: 0 0 1rem;
-  padding: 0 0 0.9rem;
-  font-size: 1.25rem;
-  font-weight: 700;
-  line-height: 1.2;
-  color: var(--text-primary-color);
-  border-bottom: 1px solid
-    color-mix(in srgb, var(--dialog-border-color) 70%, var(--color-gray-40));
-}
-
-.backend-auth-dialog__eyebrow {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--color-gray-60);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.backend-auth-dialog__description {
-  margin: 0;
-  font-size: 0.94rem;
-  line-height: 1.5;
-  color: var(--text-secondary-color);
-}
-
-.backend-auth-dialog__loading {
-  font-size: 0.95rem;
-  color: var(--text-secondary-color);
-}
-
-.backend-auth-dialog__form {
-  display: grid;
-  gap: 0.9rem;
-}
-
-.backend-auth-dialog__field {
-  display: grid;
-  gap: 0.35rem;
-}
-
-.backend-auth-dialog__field label {
-  font-size: 0.9rem;
-  font-weight: 600;
-}
-
-.backend-auth-dialog__input-shell {
-  box-sizing: border-box !important;
-  display: flex !important;
-  align-items: center !important;
-  width: 100% !important;
-  min-width: 0 !important;
-  height: 3rem !important;
-  min-height: 3rem !important;
-  max-height: 3rem !important;
-  border: 1px solid
-    color-mix(in srgb, var(--default-border-color) 70%, var(--color-gray-50)) !important;
-  border-radius: var(--border-radius-md) !important;
-  background: var(--color-surface-low) !important;
-  padding: 0 0.85rem !important;
-  overflow: hidden !important;
-}
-
-.backend-auth-dialog__input-shell:focus-within {
-  border-color: var(--color-primary) !important;
-  background: #ffffff !important;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 14%, transparent) !important;
-}
-
-.backend-auth-dialog__field input {
-  display: block !important;
-  width: 100% !important;
-  min-width: 0 !important;
-  height: 1.5rem !important;
-  min-height: 1.5rem !important;
-  max-height: 1.5rem !important;
-  padding: 0 !important;
-  margin: 0 !important;
-  border: none !important;
-  outline: none !important;
-  background: transparent !important;
-  box-shadow: none !important;
-  color: var(--text-primary-color) !important;
-  font-family: var(--ui-font) !important;
-  font-size: 1rem !important;
-  font-weight: 400 !important;
-  line-height: 1.5 !important;
-  appearance: none !important;
-  border-radius: 0 !important;
-  resize: none !important;
-  flex: 1 1 auto !important;
-}
-
-.backend-auth-dialog__field input:focus {
-  outline: none;
-  box-shadow: none !important;
-}
-
-.backend-auth-dialog__field input::placeholder {
-  color: rgba(31, 31, 37, 0.42);
-  opacity: 1;
-}
-
-.backend-auth-dialog__error {
-  border: 1px solid color-mix(in srgb, var(--color-danger) 35%, transparent);
-  border-radius: var(--border-radius-md);
-  background: color-mix(in srgb, var(--color-danger) 10%, transparent);
-  color: var(--color-danger);
-  padding: 0.7rem 0.8rem;
-  font-size: 0.88rem;
-}
-
-.backend-auth-dialog__actions {
-  display: grid;
-  gap: 0.55rem;
-}
-
-.backend-auth-dialog__submit {
-  @include outlineButtonStyles;
-
-  --button-width: auto;
-  --button-height: auto;
-  --button-border: var(--color-primary);
-  --button-bg: var(--color-primary);
-  --button-color: var(--color-surface-lowest);
-  --button-hover-bg: var(--color-primary-darker);
-  --button-hover-border: var(--color-primary-darker);
-  --button-active-bg: var(--color-primary-darkest);
-  --button-active-border: var(--color-primary-darkest);
-
-  width: 100% !important;
-  min-height: 3rem !important;
-  padding: 0.75rem 1rem !important;
-  font-size: 0.95rem !important;
-  font-weight: 600 !important;
-}
-
-.backend-auth-dialog__submit:disabled {
-  opacity: 0.7;
-  cursor: wait;
-}
-
-.backend-auth-dialog__hint {
-  font-size: 0.84rem;
-  line-height: 1.4;
-  color: var(--text-secondary-color);
-}
-
 .backend-auth-userpanel {
   position: relative;
   display: flex;
@@ -217,81 +28,6 @@
   outline-offset: 2px;
 }
 
-.backend-auth-userpanel__trigger-badge {
-  display: inline-grid;
-  place-items: center;
-  width: 1.45rem;
-  height: 1.45rem;
-  border-radius: 999px;
-  background: var(--color-primary);
-  color: #ffffff;
-  font-size: 0.9rem;
-  font-weight: 600;
-  line-height: 1;
-}
-
-.backend-auth-userpanel__menu {
-  position: absolute;
-  top: calc(100% + 0.5rem);
-  right: 0;
-  min-width: 14rem;
-  display: grid;
-  gap: 0.75rem;
-  padding: 0.8rem;
-  border-radius: 16px;
-  border: 1px solid var(--dialog-border-color);
-  box-shadow: var(--shadow-island-stronger);
-  background: var(--island-bg-color);
-  z-index: 10;
-}
-
-.backend-auth-userpanel__menu-header {
-  display: grid;
-  gap: 0.2rem;
-}
-
-.backend-auth-userpanel__menu-name {
-  font-size: 0.95rem;
-  font-weight: 700;
-}
-
-.backend-auth-userpanel__menu-meta {
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  color: rgba(31, 31, 37, 0.56);
-}
-
-.backend-auth-userpanel__actions {
-  display: grid;
-  gap: 0.5rem;
-}
-
-.backend-auth-userpanel__logout {
-  @include outlineButtonStyles;
-
-  --button-width: 100%;
-  --button-height: auto;
-  --button-border: rgba(31, 31, 37, 0.12);
-  --button-bg: #ffffff;
-  --button-color: var(--text-primary-color);
-  --button-hover-bg: color-mix(in srgb, var(--color-primary) 8%, #ffffff);
-  --button-hover-border: color-mix(
-    in srgb,
-    var(--color-primary) 35%,
-    rgba(31, 31, 37, 0.12)
-  );
-  --button-active-bg: color-mix(in srgb, var(--color-primary) 14%, #ffffff);
-  --button-active-border: color-mix(
-    in srgb,
-    var(--color-primary) 45%,
-    rgba(31, 31, 37, 0.12)
-  );
-  justify-content: center;
-  padding: 0.65rem 0.8rem;
-  font-size: 0.86rem;
-  font-weight: 600;
-}
-
 .backend-auth-userpanel__trigger--toolbar {
   width: var(--lg-button-size);
   height: var(--lg-button-size);
@@ -306,26 +42,197 @@
   background: var(--button-gray-3);
 }
 
-.excalidraw
-  .excalidraw-ui-top-right
-  .collab-button:has(.CollabButton-collaborators)
-  + .backend-auth-userpanel {
-  margin-inline-start: 0.22rem;
+.backend-auth-userpanel__trigger--anonymous {
+  width: auto;
+  min-width: var(--lg-button-size);
+  padding: 0 0.85rem;
+}
+
+.backend-auth-userpanel__trigger-badge {
+  display: inline-grid;
+  place-items: center;
+  width: 1.45rem;
+  height: 1.45rem;
+  border-radius: 999px;
+  background: var(--color-primary);
+  color: #ffffff;
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.backend-auth-userpanel__trigger-label {
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.backend-auth-userpanel__menu {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  width: 15rem;
+  max-width: min(15rem, calc(100vw - 1.5rem));
+  display: grid;
+  gap: 0.8rem;
+  padding: 0.85rem;
+  border-radius: 16px;
+  border: 1px solid var(--dialog-border-color);
+  box-shadow: var(--shadow-island-stronger);
+  background: var(--island-bg-color);
+  z-index: 10;
+}
+
+.backend-auth-userpanel__menu-header {
+  display: grid;
+  gap: 0.18rem;
+  padding: 0.15rem 0.1rem 0.25rem;
+}
+
+.backend-auth-userpanel__menu-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.25;
+  word-break: break-word;
+}
+
+.backend-auth-userpanel__menu-meta {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  color: rgba(31, 31, 37, 0.56);
+  line-height: 1.2;
+}
+
+.backend-auth-userpanel__actions {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.backend-auth-userpanel__secondary,
+.backend-auth-userpanel__logout {
+  @include outlineButtonStyles;
+
+  --button-width: 100%;
+  --button-height: auto;
+  --button-border: transparent;
+  --button-bg: transparent;
+  --button-color: var(--text-primary-color);
+  --button-hover-bg: var(--button-gray-2);
+  --button-hover-border: transparent;
+  --button-active-bg: var(--button-gray-3);
+  --button-active-border: transparent;
+  justify-content: flex-start;
+  width: 100%;
+  min-width: 0;
+  min-height: 2.5rem;
+  height: 2.5rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.backend-auth-userpanel__logout {
+  margin-top: 0.15rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid color-mix(in srgb, var(--dialog-border-color) 80%, transparent);
+  border-radius: 0;
+}
+
+.backend-auth-userpanel__secondary:disabled,
+.backend-auth-userpanel__logout:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.backend-auth-native-dialog {
+  .Dialog__content {
+    display: grid;
+  }
+}
+
+.backend-auth-native-dialog__form {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.backend-auth-native-dialog__label {
+  display: grid;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.backend-auth-native-dialog__field-error {
+  font-size: 0.84rem;
+  line-height: 1.4;
+  color: var(--color-danger);
+}
+
+.backend-auth-native-dialog__input {
+  width: 100%;
+  min-height: 2.8rem;
+  padding: 0 0.85rem;
+  border: 1px solid
+    color-mix(in srgb, var(--default-border-color) 70%, var(--color-gray-50));
+  border-radius: var(--border-radius-md);
+  background: var(--color-surface-low);
+  color: var(--text-primary-color);
+  font: inherit;
+  box-sizing: border-box;
+}
+
+.backend-auth-native-dialog__input:focus {
+  outline: 2px solid color-mix(in srgb, var(--color-primary) 18%, transparent);
+  outline-offset: 1px;
+  border-color: var(--color-primary);
+  background: #ffffff;
+}
+
+.backend-auth-native-dialog__message {
+  padding: 0.72rem 0.8rem;
+  border-radius: var(--border-radius-md);
+  border: 1px solid transparent;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--text-secondary-color);
+}
+
+.backend-auth-native-dialog__message--success {
+  border-color: color-mix(in srgb, var(--color-success) 35%, transparent);
+  background: color-mix(in srgb, var(--color-success) 12%, transparent);
+  color: color-mix(in srgb, var(--color-success-darkest) 75%, #0a5c44);
+}
+
+.backend-auth-native-dialog__message--error {
+  border-color: color-mix(in srgb, var(--color-danger) 35%, transparent);
+  background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+  color: var(--color-danger);
+}
+
+.backend-auth-native-dialog__hint {
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: var(--text-secondary-color);
+}
+
+.backend-auth-native-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding-top: 0.35rem;
+}
+
+.backend-auth-native-dialog__actions--spread {
+  justify-content: space-between;
 }
 
 @media (max-width: 640px) {
-  .backend-auth-overlay {
-    padding: 1rem;
-  }
-
-  .backend-auth-overlay__content {
-    padding: 1.1rem;
-  }
-
-  .backend-auth-dialog {
-    min-width: 0;
-  }
-
   .backend-auth-userpanel {
     left: auto;
   }
@@ -336,7 +243,17 @@
   }
 
   .backend-auth-userpanel__menu {
+    width: min(15rem, calc(100vw - 1.5rem));
+    max-width: calc(100vw - 1.5rem);
+  }
+
+  .backend-auth-userpanel__secondary,
+  .backend-auth-userpanel__logout {
+    width: 100%;
     min-width: 0;
-    width: min(18rem, calc(100vw - 1.5rem));
+    min-height: 2.9rem;
+    height: 2.9rem;
+    font-size: 0.94rem;
+    white-space: nowrap;
   }
 }

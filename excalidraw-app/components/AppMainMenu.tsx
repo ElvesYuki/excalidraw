@@ -15,6 +15,8 @@ import { isExcalidrawPlusSignedUser } from "../app_constants";
 
 import { saveDebugState } from "./DebugCanvas";
 
+import { useAuth } from "../auth/AuthGate";
+
 export const AppMainMenu: React.FC<{
   onCollabDialogOpen: () => any;
   isCollaborating: boolean;
@@ -23,6 +25,22 @@ export const AppMainMenu: React.FC<{
   setTheme: (theme: Theme | "system") => void;
   refresh: () => void;
 }> = React.memo((props) => {
+  const auth = useAuth();
+
+  const ensureAuthenticated = (message: string, action: () => void) => {
+    if (!auth || auth.authState.status === "disabled") {
+      action();
+      return;
+    }
+
+    if (auth.authState.status !== "authenticated") {
+      auth.promptLogin(message);
+      return;
+    }
+
+    action();
+  };
+
   return (
     <MainMenu>
       <MainMenu.DefaultItems.LoadScene />
@@ -32,7 +50,11 @@ export const AppMainMenu: React.FC<{
       {props.isCollabEnabled && (
         <MainMenu.DefaultItems.LiveCollaborationTrigger
           isCollaborating={props.isCollaborating}
-          onSelect={() => props.onCollabDialogOpen()}
+          onSelect={() =>
+            ensureAuthenticated("协作功能需要先登录", () =>
+              props.onCollabDialogOpen(),
+            )
+          }
         />
       )}
       <MainMenu.DefaultItems.CommandPalette className="highlighted" />
