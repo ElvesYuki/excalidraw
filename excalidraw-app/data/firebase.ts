@@ -22,6 +22,7 @@ import type {
 } from "@excalidraw/excalidraw/types";
 
 import { FILE_CACHE_MAX_AGE_SEC } from "../app_constants";
+import { authorizedFetch } from "../auth/api";
 
 import { getSyncableElements } from ".";
 
@@ -84,7 +85,7 @@ const base64ToBytes = (value: string) => {
 const fetchScene = async (
   roomId: string,
 ): Promise<StoredScenePayload | null> => {
-  const response = await fetch(createStorageUrl(`/scenes/${roomId}`));
+  const response = await authorizedFetch(createStorageUrl(`/scenes/${roomId}`));
   if (response.status === 404) {
     return null;
   }
@@ -95,7 +96,7 @@ const fetchScene = async (
 };
 
 const putScene = async (roomId: string, scene: StoredScenePayload) => {
-  const response = await fetch(createStorageUrl(`/scenes/${roomId}`), {
+  const response = await authorizedFetch(createStorageUrl(`/scenes/${roomId}`), {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
@@ -124,7 +125,7 @@ const putFile = async ({
   if (metadata) {
     searchParams.set("metadata", JSON.stringify(metadata));
   }
-  const response = await fetch(
+  const response = await authorizedFetch(
     createStorageUrl(`/files/${encodeURIComponent(fileId)}`, searchParams),
     {
       method: "PUT",
@@ -147,7 +148,7 @@ const getFile = async ({
   fileId: FileId;
   prefix: string;
 }) => {
-  const response = await fetch(
+  const response = await authorizedFetch(
     createStorageUrl(
       `/files/${encodeURIComponent(fileId)}`,
       new URLSearchParams({ prefix }),

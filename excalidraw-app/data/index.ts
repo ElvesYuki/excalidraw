@@ -37,6 +37,7 @@ import {
 
 import { encodeFilesForUpload } from "./FileManager";
 import { saveFilesToFirebase } from "./firebase";
+import { authorizedFetch } from "../auth/api";
 
 import type { WS_SUBTYPES } from "../app_constants";
 
@@ -220,7 +221,7 @@ export const importFromBackend = async (
   decryptionKey: string,
 ): Promise<ImportedDataState> => {
   try {
-    const response = await fetch(`${BACKEND_V2_GET}${id}`);
+    const response = await authorizedFetch(`${BACKEND_V2_GET}${id}`);
 
     if (!response.ok) {
       window.alert(t("alerts.importBackendFailed"));
@@ -289,7 +290,7 @@ export const exportToBackend = async (
       maxBytes: FILE_UPLOAD_MAX_BYTES,
     });
 
-    const response = await fetch(BACKEND_V2_POST, {
+    const response = await authorizedFetch(BACKEND_V2_POST, {
       method: "POST",
       body: payload.buffer,
     });

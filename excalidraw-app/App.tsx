@@ -147,6 +147,7 @@ import "./index.scss";
 
 import { ExcalidrawPlusPromoBanner } from "./components/ExcalidrawPlusPromoBanner";
 import { AppSidebar } from "./components/AppSidebar";
+import { AuthUserMenu } from "./auth/AuthUserMenu";
 
 import type { CollabAPI } from "./collab/Collab";
 
@@ -973,6 +974,7 @@ const ExcalidrawWrapper = () => {
                 }
                 editorInterface={editorInterface}
               />
+              <AuthUserMenu />
             </div>
           );
         }}

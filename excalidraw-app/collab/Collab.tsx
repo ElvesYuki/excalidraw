@@ -90,6 +90,7 @@ import { resetBrowserStateVersions } from "../data/tabSync";
 import { collabErrorIndicatorAtom } from "./CollabError";
 import { createCollabSocket } from "./CollabSocket";
 import Portal from "./Portal";
+import { buildAuthorizedWsUrl } from "../auth/api";
 
 import type {
   SocketUpdateDataSource,
@@ -522,8 +523,9 @@ class Collab extends PureComponent<CollabProps, CollabState> {
       const collabUrl =
         import.meta.env.VITE_APP_WS_SERVER_URL ||
         `${collabProtocol}://${window.location.host}/api/v1/collab/ws`;
+      const authorizedCollabUrl = await buildAuthorizedWsUrl(collabUrl);
       this.portal.socket = this.portal.open(
-        createCollabSocket(collabUrl),
+        createCollabSocket(authorizedCollabUrl),
         roomId,
         roomKey,
       );
