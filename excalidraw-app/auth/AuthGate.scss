@@ -4,8 +4,15 @@
   position: relative;
   display: flex;
   align-items: center;
+  gap: 0.5rem;
   color: var(--text-primary-color);
   pointer-events: var(--ui-pointerEvents);
+}
+
+.backend-auth-userpanel__popover {
+  position: relative;
+  display: flex;
+  align-items: center;
 }
 
 .backend-auth-userpanel__trigger {
@@ -38,6 +45,12 @@
   box-shadow: none;
 }
 
+.backend-auth-userpanel__trigger--history {
+  width: auto;
+  min-width: var(--lg-button-size);
+  padding: 0 0.85rem;
+}
+
 .backend-auth-userpanel__trigger--toolbar:active {
   background: var(--button-gray-3);
 }
@@ -67,6 +80,12 @@
   line-height: 1;
 }
 
+.backend-auth-userpanel__trigger-text {
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
 .backend-auth-userpanel__menu {
   position: absolute;
   top: calc(100% + 0.5rem);
@@ -81,6 +100,11 @@
   box-shadow: var(--shadow-island-stronger);
   background: var(--island-bg-color);
   z-index: 10;
+}
+
+.backend-auth-userpanel__menu--history {
+  width: min(24rem, calc(100vw - 1.5rem));
+  max-width: min(24rem, calc(100vw - 1.5rem));
 }
 
 .backend-auth-userpanel__menu-header {
@@ -150,6 +174,53 @@
   cursor: not-allowed;
 }
 
+.backend-auth-history-panel__list {
+  display: grid;
+  gap: 0.55rem;
+  max-height: min(24rem, 52vh);
+  overflow: auto;
+}
+
+.backend-auth-history-panel__item {
+  @include outlineButtonStyles;
+
+  --button-width: 100%;
+  --button-height: auto;
+  --button-border: transparent;
+  --button-bg: transparent;
+  --button-color: var(--text-primary-color);
+  --button-hover-bg: var(--button-gray-2);
+  --button-hover-border: transparent;
+  --button-active-bg: var(--button-gray-3);
+  --button-active-border: transparent;
+  display: grid;
+  gap: 0.25rem;
+  justify-items: flex-start;
+  align-items: flex-start;
+  width: 100%;
+  min-width: 0;
+  padding: 0.65rem 0.7rem;
+  border-radius: 12px;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.backend-auth-history-panel__name {
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text-primary-color);
+  word-break: break-word;
+}
+
+.backend-auth-history-panel__meta {
+  font-size: 0.8rem;
+  line-height: 1.35;
+  color: var(--text-secondary-color);
+  word-break: break-word;
+}
+
 .backend-auth-native-dialog {
   .Dialog__content {
     display: grid;
@@ -194,6 +265,11 @@
   background: #ffffff;
 }
 
+.backend-auth-native-dialog__select {
+  appearance: none;
+  cursor: pointer;
+}
+
 .backend-auth-native-dialog__message {
   padding: 0.72rem 0.8rem;
   border-radius: var(--border-radius-md);
@@ -232,6 +308,228 @@
   justify-content: space-between;
 }
 
+.backend-auth-admin-dialog {
+  .Dialog__content {
+    width: min(56rem, calc(100vw - 2rem));
+    max-width: min(56rem, calc(100vw - 2rem));
+  }
+}
+
+.backend-auth-admin-dialog__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.backend-auth-admin-dialog__list {
+  display: grid;
+  gap: 0.75rem;
+  max-height: min(34rem, 68vh);
+  overflow: auto;
+}
+
+.backend-auth-admin-dialog__result {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.9rem 1rem;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--color-success) 28%, transparent);
+  background: color-mix(in srgb, var(--color-success) 10%, var(--island-bg-color));
+}
+
+.backend-auth-admin-dialog__result-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.4;
+  color: color-mix(in srgb, var(--color-success-darkest) 80%, var(--text-primary-color));
+}
+
+.backend-auth-admin-dialog__result-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.backend-auth-admin-dialog__result-code {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.5rem;
+  padding: 0.45rem 0.8rem;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--default-border-color) 75%, transparent);
+  background: #ffffff;
+  color: var(--text-primary-color);
+  font-family: var(--ui-font);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-gray-20) 40%, transparent);
+  user-select: all;
+}
+
+.backend-auth-admin-dialog__copy {
+  width: auto;
+  min-width: 6.5rem;
+  justify-content: center;
+  padding-inline: 0.9rem;
+}
+
+.backend-auth-admin-dialog__item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.9rem;
+  align-items: center;
+  padding: 0.8rem;
+  border-radius: 14px;
+  background: var(--color-surface-low);
+  border: 1px solid color-mix(in srgb, var(--dialog-border-color) 72%, transparent);
+}
+
+.backend-auth-admin-dialog__identity {
+  min-width: 0;
+}
+
+.backend-auth-admin-dialog__name {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.backend-auth-admin-dialog__current-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.35rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--button-gray-2) 80%, var(--color-surface-low));
+  border: 1px solid color-mix(in srgb, var(--default-border-color) 70%, transparent);
+  color: var(--text-secondary-color);
+  font-size: 0.74rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.backend-auth-admin-dialog__summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.5rem;
+  margin-top: 0.22rem;
+}
+
+.backend-auth-admin-dialog__meta {
+  font-size: 0.82rem;
+  color: var(--text-secondary-color);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.backend-auth-admin-dialog__badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.5rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface-low));
+  border: 1px solid color-mix(in srgb, var(--color-primary) 18%, transparent);
+  color: color-mix(in srgb, var(--color-primary) 70%, var(--text-primary-color));
+  font-size: 0.76rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.backend-auth-admin-dialog__badge--success {
+  background: color-mix(in srgb, var(--color-success) 12%, var(--color-surface-low));
+  border-color: color-mix(in srgb, var(--color-success) 24%, transparent);
+  color: color-mix(in srgb, var(--color-success-darkest) 78%, var(--text-primary-color));
+}
+
+.backend-auth-admin-dialog__badge--muted {
+  background: color-mix(in srgb, var(--color-danger) 10%, var(--color-surface-low));
+  border-color: color-mix(in srgb, var(--color-danger) 18%, transparent);
+  color: color-mix(in srgb, var(--color-danger) 72%, var(--text-primary-color));
+}
+
+.backend-auth-admin-dialog__tip {
+  margin-top: 0.35rem;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--text-secondary-color);
+}
+
+.backend-auth-admin-dialog__item-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.backend-auth-admin-dialog__action {
+  width: auto;
+  min-width: 5.4rem;
+  justify-content: center;
+  text-align: center;
+}
+
+.backend-auth-history-dialog__list {
+  display: grid;
+  gap: 0.75rem;
+  max-height: min(28rem, 62vh);
+  overflow: auto;
+}
+
+.backend-auth-history-dialog__item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.9rem;
+  align-items: center;
+  padding: 0.8rem;
+  border-radius: 14px;
+  background: var(--color-surface-low);
+  border: 1px solid color-mix(in srgb, var(--dialog-border-color) 72%, transparent);
+}
+
+.backend-auth-history-dialog__identity {
+  min-width: 0;
+}
+
+.backend-auth-history-dialog__room {
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.backend-auth-history-dialog__summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.6rem;
+  margin-top: 0.22rem;
+}
+
+.backend-auth-history-dialog__meta {
+  font-size: 0.82rem;
+  color: var(--text-secondary-color);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.backend-auth-history-dialog__open {
+  width: auto;
+  min-width: 5.2rem;
+  justify-content: center;
+  text-align: center;
+}
+
 @media (max-width: 640px) {
   .backend-auth-userpanel {
     left: auto;
@@ -255,5 +553,33 @@
     height: 2.9rem;
     font-size: 0.94rem;
     white-space: nowrap;
+  }
+
+  .backend-auth-admin-dialog__toolbar,
+  .backend-auth-admin-dialog__item,
+  .backend-auth-history-dialog__item {
+    grid-template-columns: 1fr;
+  }
+
+  .backend-auth-admin-dialog__toolbar {
+    display: grid;
+  }
+
+  .backend-auth-admin-dialog__result-row {
+    display: grid;
+  }
+
+  .backend-auth-admin-dialog__copy {
+    width: 100%;
+  }
+
+  .backend-auth-admin-dialog__item-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .backend-auth-admin-dialog__action,
+  .backend-auth-history-dialog__open {
+    width: 100%;
   }
 }

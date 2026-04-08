@@ -12,6 +12,7 @@ import {
   onUnauthorized,
   registerWithPassword,
   resetPassword,
+  updateProfile,
 } from "./api";
 
 import type { AuthResetPasswordResult, AuthUser } from "./types";
@@ -37,6 +38,7 @@ type AuthContextValue = {
   refreshCurrentUser: () => Promise<void>;
   changePassword: (oldPassword: string, newPassword: string) => Promise<void>;
   resetPassword: (username: string) => Promise<AuthResetPasswordResult>;
+  updateProfile: (displayName: string) => Promise<void>;
   authDialogMode: "login" | "register";
   isAuthDialogOpen: boolean;
   authMessage?: AuthDialogMessage;
@@ -138,7 +140,7 @@ export const AuthGate = ({ children }: AuthGateProps) => {
     initialize();
 
     const unsubscribe = onUnauthorized((message) => {
-      logoutBackend();
+      void logoutBackend();
       const errorMessage = message || "登录已失效，请重新登录";
       setAuthState({
         status: "anonymous",
@@ -182,8 +184,8 @@ export const AuthGate = ({ children }: AuthGateProps) => {
     }
   };
 
-  const handleLogout = () => {
-    logoutBackend();
+  const handleLogout = async () => {
+    await logoutBackend();
     setAuthState({ status: "anonymous", successMessage: "你已退出登录" });
     setAuthMessage({ type: "success", text: "你已退出登录" });
     setAuthDialogMode("login");
@@ -259,6 +261,10 @@ export const AuthGate = ({ children }: AuthGateProps) => {
     },
     resetPassword: async (resetUsername: string) => {
       return resetPassword({ username: resetUsername });
+    },
+    updateProfile: async (displayName: string) => {
+      const user = await updateProfile({ displayName });
+      setAuthState({ status: "authenticated", user });
     },
     authDialogMode,
     isAuthDialogOpen,

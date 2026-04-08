@@ -1,10 +1,14 @@
 import { clearStoredAuthToken, getStoredAuthToken, setStoredAuthToken } from "./session";
 
 import type {
+  AdminUserListItem,
+  AdminUserListResult,
   AuthChangePasswordPayload,
   AuthRegisterPayload,
   AuthResetPasswordPayload,
   AuthResetPasswordResult,
+  AuthSceneHistoryResult,
+  AuthUpdateProfilePayload,
   AuthUser,
 } from "./types";
 
@@ -34,6 +38,10 @@ export const getAuthMeUrl = () =>
   import.meta.env.VITE_APP_BACKEND_AUTH_ME_URL?.trim() ||
   createBackendUrl(`${API_PREFIX}/auth/me`);
 
+export const getAuthMyScenesUrl = () =>
+  import.meta.env.VITE_APP_BACKEND_AUTH_ME_SCENES_URL?.trim() ||
+  createBackendUrl(`${API_PREFIX}/auth/me/scenes`);
+
 export const getAuthChangePasswordUrl = () =>
   import.meta.env.VITE_APP_BACKEND_AUTH_CHANGE_PASSWORD_URL?.trim() ||
   createBackendUrl(`${API_PREFIX}/auth/change-password`);
@@ -41,6 +49,18 @@ export const getAuthChangePasswordUrl = () =>
 export const getAuthResetPasswordUrl = () =>
   import.meta.env.VITE_APP_BACKEND_AUTH_RESET_PASSWORD_URL?.trim() ||
   createBackendUrl(`${API_PREFIX}/auth/reset-password`);
+
+export const getAuthUpdateProfileUrl = () =>
+  import.meta.env.VITE_APP_BACKEND_AUTH_UPDATE_PROFILE_URL?.trim() ||
+  createBackendUrl(`${API_PREFIX}/auth/profile`);
+
+export const getAuthLogoutUrl = () =>
+  import.meta.env.VITE_APP_BACKEND_AUTH_LOGOUT_URL?.trim() ||
+  createBackendUrl(`${API_PREFIX}/auth/logout`);
+
+export const getAdminUsersUrl = () =>
+  import.meta.env.VITE_APP_BACKEND_ADMIN_USERS_URL?.trim() ||
+  createBackendUrl(`${API_PREFIX}/auth/admin/users`);
 
 export const getStoredToken = () => getStoredAuthToken();
 
@@ -141,7 +161,17 @@ export const registerWithPassword = async (
   return json?.data?.user as AuthUser;
 };
 
-export const logoutBackend = () => {
+export const logoutBackend = async () => {
+  const token = getStoredAuthToken();
+  if (token) {
+    try {
+      await authorizedFetch(getAuthLogoutUrl(), {
+        method: "POST",
+      });
+    } catch {
+      // noop
+    }
+  }
   clearStoredAuthToken();
 };
 
@@ -175,6 +205,23 @@ export const fetchCurrentUser = async (): Promise<AuthUser> => {
   }
   const json = await response.json();
   return json?.data as AuthUser;
+};
+
+export const fetchMyScenes = async (): Promise<AuthSceneHistoryResult> => {
+  const response = await authorizedFetch(getAuthMyScenesUrl());
+  if (!response.ok) {
+    let message = "加载历史记录失败";
+    try {
+      const json = await response.json();
+      message = json?.error || json?.msg || message;
+    } catch {
+      // noop
+    }
+    throw new Error(message);
+  }
+
+  const json = await response.json();
+  return json?.data as AuthSceneHistoryResult;
 };
 
 export const changePassword = async (payload: AuthChangePasswordPayload) => {
@@ -222,6 +269,101 @@ export const resetPassword = async (
 
   const json = await response.json();
   return json?.data as AuthResetPasswordResult;
+};
+
+export const updateProfile = async (
+  payload: AuthUpdateProfilePayload,
+): Promise<AuthUser> => {
+  const response = await authorizedFetch(getAuthUpdateProfileUrl(), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    let message = "更新资料失败";
+    try {
+      const json = await response.json();
+      message = json?.error || json?.msg || message;
+    } catch {
+      // noop
+    }
+    throw new Error(message);
+  }
+
+  const json = await response.json();
+  return json?.data as AuthUser;
+};
+
+export const fetchAdminUsers = async (): Promise<AdminUserListResult> => {
+  const response = await authorizedFetch(getAdminUsersUrl());
+  if (!response.ok) {
+    let message = "加载用户列表失败";
+    try {
+      const json = await response.json();
+      message = json?.error || json?.msg || message;
+    } catch {
+      // noop
+    }
+    throw new Error(message);
+  }
+
+  const json = await response.json();
+  return json?.data as AdminUserListResult;
+};
+
+export const updateAdminUserStatus = async (
+  userId: number,
+  status: "active" | "disabled",
+): Promise<AuthUser> => {
+  const response = await authorizedFetch(`${getAdminUsersUrl()}/${userId}/status`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ status }),
+  });
+
+  if (!response.ok) {
+    let message = "更新用户状态失败";
+    try {
+      const json = await response.json();
+      message = json?.error || json?.msg || message;
+    } catch {
+      // noop
+    }
+    throw new Error(message);
+  }
+
+  const json = await response.json();
+  return json?.data as AuthUser;
+};
+
+export const adminResetUserPassword = async (
+  userId: number,
+): Promise<{ user: AdminUserListItem; temporaryPassword: string }> => {
+  const response = await authorizedFetch(
+    `${getAdminUsersUrl()}/${userId}/reset-password`,
+    {
+      method: "POST",
+    },
+  );
+
+  if (!response.ok) {
+    let message = "重置用户密码失败";
+    try {
+      const json = await response.json();
+      message = json?.error || json?.msg || message;
+    } catch {
+      // noop
+    }
+    throw new Error(message);
+  }
+
+  const json = await response.json();
+  return json?.data as { user: AdminUserListItem; temporaryPassword: string };
 };
 
 export const buildAuthorizedWsUrl = async (url: string) => {

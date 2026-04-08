@@ -36,6 +36,8 @@ type StoredScenePayload = {
   ciphertext: string;
 };
 
+const normalizeSceneName = (value: string | null | undefined) => value?.trim() || "";
+
 const API_PREFIX = "/api/v1";
 
 const getStorageBackendBaseUrl = () => {
@@ -96,13 +98,26 @@ const fetchScene = async (
   return response.json();
 };
 
-const putScene = async (roomId: string, scene: StoredScenePayload) => {
+const putScene = async (
+  roomId: string,
+  scene: StoredScenePayload,
+  roomKey: string,
+  sceneName?: string | null,
+) => {
   requireAuthToken("保存协作场景前，请先登录");
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  const normalizedSceneName = normalizeSceneName(sceneName);
+  if (normalizedSceneName) {
+    headers["X-Scene-Name"] = normalizedSceneName;
+  }
+  if (roomKey.trim()) {
+    headers["X-Room-Key"] = roomKey.trim();
+  }
   const response = await authorizedFetch(createStorageUrl(`/scenes/${roomId}`), {
     method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers,
     body: JSON.stringify(scene),
   });
   if (!response.ok) {
@@ -309,7 +324,7 @@ export const saveToFirebase = async (
   }
 
   const storedScene = await createStoredScene(elementsToStore, roomKey);
-  await putScene(roomId, storedScene);
+  await putScene(roomId, storedScene, roomKey, appState.name);
 
   const storedElements = getSyncableElements(
     restoreElements(await decryptElements(storedScene, roomKey), null),
