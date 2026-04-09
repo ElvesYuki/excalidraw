@@ -10,6 +10,9 @@ import type {
   AuthSceneHistoryResult,
   AuthUpdateProfilePayload,
   AuthUser,
+  SceneListResult,
+  SceneRecord,
+  SceneOpenCollabResult,
 } from "./types";
 
 const API_PREFIX = "/api/v1";
@@ -61,6 +64,10 @@ export const getAuthLogoutUrl = () =>
 export const getAdminUsersUrl = () =>
   import.meta.env.VITE_APP_BACKEND_ADMIN_USERS_URL?.trim() ||
   createBackendUrl(`${API_PREFIX}/auth/admin/users`);
+
+export const getUserScenesUrl = () =>
+  import.meta.env.VITE_APP_BACKEND_USER_SCENES_URL?.trim() ||
+  createBackendUrl(`${API_PREFIX}/user-scenes`);
 
 export const getStoredToken = () => getStoredAuthToken();
 
@@ -222,6 +229,100 @@ export const fetchMyScenes = async (): Promise<AuthSceneHistoryResult> => {
 
   const json = await response.json();
   return json?.data as AuthSceneHistoryResult;
+};
+
+export const openSceneCollab = async (
+  sceneId: number,
+): Promise<SceneOpenCollabResult> => {
+  const response = await authorizedFetch(
+    `${getUserScenesUrl()}/${sceneId}/open-collab`,
+    {
+      method: "POST",
+    },
+  );
+  if (!response.ok) {
+    let message = "打开协作房间失败";
+    try {
+      const json = await response.json();
+      message = json?.error || json?.msg || message;
+    } catch {
+      // noop
+    }
+    throw new Error(message);
+  }
+
+  const json = await response.json();
+  return json?.data as SceneOpenCollabResult;
+};
+
+export const createUserScene = async (sceneName: string): Promise<SceneRecord> => {
+  const response = await authorizedFetch(getUserScenesUrl(), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      sceneName,
+    }),
+  });
+  if (!response.ok) {
+    let message = "创建画布失败";
+    try {
+      const json = await response.json();
+      message = json?.error || json?.msg || message;
+    } catch {
+      // noop
+    }
+    throw new Error(message);
+  }
+
+  const json = await response.json();
+  return json?.data as SceneRecord;
+};
+
+export const fetchUserScenes = async (): Promise<SceneListResult> => {
+  const response = await authorizedFetch(getUserScenesUrl());
+  if (!response.ok) {
+    let message = "加载我的画布失败";
+    try {
+      const json = await response.json();
+      message = json?.error || json?.msg || message;
+    } catch {
+      // noop
+    }
+    throw new Error(message);
+  }
+
+  const json = await response.json();
+  return json?.data as SceneListResult;
+};
+
+export const renameUserScene = async (
+  sceneId: number,
+  sceneName: string,
+): Promise<SceneRecord> => {
+  const response = await authorizedFetch(`${getUserScenesUrl()}/${sceneId}/rename`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      sceneName,
+    }),
+  });
+  if (!response.ok) {
+    let message = "修改画布名称失败";
+    try {
+      const json = await response.json();
+      message = json?.error || json?.msg || message;
+    } catch {
+      // noop
+    }
+    throw new Error(message);
+  }
+
+  const json = await response.json();
+  return json?.data as SceneRecord;
 };
 
 export const changePassword = async (payload: AuthChangePasswordPayload) => {

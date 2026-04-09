@@ -20,11 +20,15 @@ import { useEffect, useRef, useState } from "react";
 
 import { atom, useAtom, useAtomValue } from "../app-jotai";
 import { activeRoomLinkAtom } from "../collab/Collab";
+import { useAuth } from "../auth/AuthGate";
+import { createUserScene, openSceneCollab } from "../auth/api";
+import { buildSceneCollabUrl } from "../auth/sceneSession";
 
 import "./ShareDialog.scss";
 import { QRCode } from "./QRCode";
 
 import type { CollabAPI } from "../collab/Collab";
+import type { SceneRecord } from "../auth/types";
 
 type OnExportToBackend = () => void;
 type ShareDialogType = "share" | "collaborationOnly";
@@ -52,6 +56,9 @@ export type ShareDialogProps = {
   handleClose: () => void;
   onExportToBackend: OnExportToBackend;
   type: ShareDialogType;
+  getSceneName?: () => string;
+  currentScene?: SceneRecord | null;
+  onSceneReady?: (scene: SceneRecord) => void;
 };
 
 const ActiveRoomDialog = ({
@@ -180,8 +187,54 @@ const ActiveRoomDialog = ({
 
 const ShareDialogPicker = (props: ShareDialogProps) => {
   const { t } = useI18n();
-
+  const auth = useAuth();
   const { collabAPI } = props;
+  const [isStartingCollab, setIsStartingCollab] = useState(false);
+
+  const openSceneDrivenCollab = async () => {
+    if (!auth || auth.authState.status === "disabled" || !collabAPI) {
+      collabAPI?.startCollaboration(null);
+      return;
+    }
+
+    if (auth.authState.status !== "authenticated") {
+      auth.promptLogin("开始实时协作前，请先登录");
+      return;
+    }
+
+    setIsStartingCollab(true);
+    try {
+      let sceneId = props.currentScene?.sceneId || null;
+      if (!sceneId) {
+        const createdScene = await createUserScene(
+          props.getSceneName?.().trim() || document.title || "未命名画布",
+        );
+        sceneId = createdScene.sceneId;
+        props.onSceneReady?.(createdScene);
+      }
+
+      const collabRoom = await openSceneCollab(sceneId);
+      window.history.pushState(
+        {},
+        "",
+        buildSceneCollabUrl({
+          sceneId: collabRoom.sceneId,
+          roomId: collabRoom.roomId,
+          roomKey: collabRoom.roomKey,
+        }),
+      );
+      await collabAPI.startCollaboration({
+        roomId: collabRoom.roomId,
+        roomKey: collabRoom.roomKey,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "打开协作房间失败";
+      collabAPI.setCollabError(message);
+    } finally {
+      setIsStartingCollab(false);
+    }
+  };
 
   const startCollabJSX = collabAPI ? (
     <>
@@ -201,8 +254,9 @@ const ShareDialogPicker = (props: ShareDialogProps) => {
           icon={playerPlayIcon}
           onClick={() => {
             trackEvent("share", "room creation", `ui (${getFrame()})`);
-            collabAPI.startCollaboration(null);
+            void openSceneDrivenCollab();
           }}
+          disabled={isStartingCollab}
         />
       </div>
 
@@ -267,6 +321,9 @@ const ShareDialogInner = (props: ShareDialogProps) => {
 export const ShareDialog = (props: {
   collabAPI: CollabAPI | null;
   onExportToBackend: OnExportToBackend;
+  getSceneName?: () => string;
+  currentScene?: SceneRecord | null;
+  onSceneReady?: (scene: SceneRecord) => void;
 }) => {
   const [shareDialogState, setShareDialogState] = useAtom(shareDialogStateAtom);
 
@@ -288,6 +345,9 @@ export const ShareDialog = (props: {
       collabAPI={props.collabAPI}
       onExportToBackend={props.onExportToBackend}
       type={shareDialogState.type}
+      getSceneName={props.getSceneName}
+      currentScene={props.currentScene}
+      onSceneReady={props.onSceneReady}
     />
   );
 };

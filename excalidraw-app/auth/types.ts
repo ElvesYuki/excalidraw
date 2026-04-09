@@ -40,9 +40,11 @@ export type AdminUserListResult = {
 };
 
 export type AuthSceneHistoryItem = {
+  sceneId: number;
   sceneRecordId: number;
   roomId: string;
   roomKey?: string;
+  canOpenCollab: boolean;
   sceneName: string;
   version: number;
   size: number;
@@ -54,5 +56,31 @@ export type AuthSceneHistoryItem = {
 
 export type AuthSceneHistoryResult = {
   items: AuthSceneHistoryItem[];
+  total: number;
+};
+
+export type SceneOpenCollabResult = {
+  sceneId: number;
+  sceneName: string;
+  roomId: string;
+  roomKey: string;
+  isNewRoom: boolean;
+};
+
+export type SceneRecord = {
+  sceneId: number;
+  ownerUserId: number;
+  sceneName: string;
+  status: string;
+  currentRoomId: string;
+  isCollabEnabled: boolean;
+  latestSceneRecordId: number;
+  lastActivatedAt?: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type SceneListResult = {
+  items: SceneRecord[];
   total: number;
 };

@@ -151,6 +151,8 @@ import { AppSidebar } from "./components/AppSidebar";
 import { AuthDialog } from "./auth/AuthDialog";
 import { useAuth } from "./auth/AuthGate";
 import { AuthUserMenu } from "./auth/AuthUserMenu";
+import { CurrentSceneDialog } from "./scene/CurrentSceneDialog";
+import { useCurrentScene } from "./scene/useCurrentScene";
 
 import type { CollabAPI } from "./collab/Collab";
 
@@ -191,6 +193,14 @@ window.addEventListener(
 );
 
 let isSelfEmbedding = false;
+
+const waitForAnimationFrames = async (frameCount = 2) => {
+  for (let i = 0; i < frameCount; i += 1) {
+    await new Promise<void>((resolve) => {
+      window.requestAnimationFrame(() => resolve());
+    });
+  }
+};
 
 if (window.self !== window.top) {
   try {
@@ -540,26 +550,49 @@ const ExcalidrawWrapper = () => {
       event.preventDefault();
       const libraryUrlTokens = parseLibraryTokensFromUrl();
       if (!libraryUrlTokens) {
+        const nextRoomLinkData = getCollaborationLinkData(window.location.href);
+        const activeRoomLink = collabAPI?.getActiveRoomLink() || "";
+        const activeRoomLinkData = activeRoomLink
+          ? getCollaborationLinkData(activeRoomLink)
+          : null;
+        const isSwitchingCollabRoom =
+          collabAPI?.isCollaborating() &&
+          nextRoomLinkData &&
+          (!activeRoomLinkData ||
+            activeRoomLinkData.roomId !== nextRoomLinkData.roomId ||
+            activeRoomLinkData.roomKey !== nextRoomLinkData.roomKey);
+
         if (
           collabAPI?.isCollaborating() &&
-          !isCollaborationLink(window.location.href)
+          (!isCollaborationLink(window.location.href) || isSwitchingCollabRoom)
         ) {
-          collabAPI.stopCollaboration(false);
+          setIsSceneSwitching(Boolean(isSwitchingCollabRoom));
+          await collabAPI.stopCollaboration(false, {
+            persistCurrentScene: true,
+          });
+          if (isSwitchingCollabRoom) {
+            excalidrawAPI.resetScene();
+            await waitForAnimationFrames();
+          }
         }
         excalidrawAPI.updateScene({ appState: { isLoading: true } });
 
-        initializeScene({ collabAPI, excalidrawAPI }).then((data) => {
-          loadImages(data);
-          if (data.scene) {
-            excalidrawAPI.updateScene({
-              elements: restoreElements(data.scene.elements, null, {
-                repairBindings: true,
-              }),
-              appState: restoreAppState(data.scene.appState, null),
-              captureUpdate: CaptureUpdateAction.IMMEDIATELY,
-            });
-          }
-        });
+        initializeScene({ collabAPI, excalidrawAPI })
+          .then((data) => {
+            loadImages(data);
+            if (data.scene) {
+              excalidrawAPI.updateScene({
+                elements: restoreElements(data.scene.elements, null, {
+                  repairBindings: true,
+                }),
+                appState: restoreAppState(data.scene.appState, null),
+                captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+              });
+            }
+          })
+          .finally(() => {
+            setIsSceneSwitching(false);
+          });
       }
     };
 
@@ -737,6 +770,46 @@ const ExcalidrawWrapper = () => {
     null,
   );
   const auth = useAuth();
+  const { currentScene, currentSceneState, setCurrentScene } =
+    useCurrentScene();
+  const currentSceneTitle = currentScene?.sceneName?.trim()
+    ? currentScene.sceneName.trim()
+    : currentScene?.sceneId
+    ? `未命名画布 #${currentScene.sceneId}`
+    : "";
+  const [isSceneSwitching, setIsSceneSwitching] = useState(false);
+  const [isCurrentSceneDialogOpen, setIsCurrentSceneDialogOpen] =
+    useState(false);
+  const [currentSceneNameDraft, setCurrentSceneNameDraft] = useState("");
+  const [currentSceneMessage, setCurrentSceneMessage] = useState("");
+  const [isCurrentSceneSubmitting, setIsCurrentSceneSubmitting] =
+    useState(false);
+
+  useEffect(() => {
+    if (!currentSceneState.errorMessage) {
+      return;
+    }
+    excalidrawAPI?.setToast({
+      message: currentSceneState.errorMessage,
+    });
+  }, [currentSceneState.errorMessage, excalidrawAPI]);
+
+  useEffect(() => {
+    if (!collabAPI || !auth || auth.authState.status !== "authenticated") {
+      return;
+    }
+
+    const nextUsername =
+      auth.authState.user.displayName?.trim() ||
+      auth.authState.user.username?.trim() ||
+      "";
+
+    if (!nextUsername || collabAPI.getUsername() === nextUsername) {
+      return;
+    }
+
+    collabAPI.setUsername(nextUsername);
+  }, [auth, collabAPI]);
 
   const ensureAuthenticated = useCallback(
     (message: string, action: () => void) => {
@@ -1002,6 +1075,23 @@ const ExcalidrawWrapper = () => {
               )}
 
               <div className="backend-top-right">
+                {currentSceneTitle && (
+                  <button
+                    className="backend-top-right__scene"
+                    title={currentSceneTitle}
+                    type="button"
+                    onClick={() => {
+                      setCurrentSceneNameDraft(currentScene?.sceneName || "");
+                      setCurrentSceneMessage("");
+                      setIsCurrentSceneDialogOpen(true);
+                    }}
+                  >
+                    <span className="backend-top-right__scene-label">画布</span>
+                    <span className="backend-top-right__scene-name">
+                      {currentSceneTitle}
+                    </span>
+                  </button>
+                )}
                 <div
                   className={clsx("backend-top-right__collab", {
                     "backend-top-right__collab--with-badge":
@@ -1022,7 +1112,7 @@ const ExcalidrawWrapper = () => {
                   />
                 </div>
                 <div className="backend-top-right__account">
-                  <AuthUserMenu />
+                  <AuthUserMenu onSceneReady={setCurrentScene} />
                 </div>
               </div>
             </div>
@@ -1107,9 +1197,44 @@ const ExcalidrawWrapper = () => {
               }
             }
           }}
+          getSceneName={() => excalidrawAPI?.getName() || ""}
+          currentScene={currentScene}
+          onSceneReady={setCurrentScene}
         />
 
         <AuthDialog />
+
+        {currentScene && (
+          <CurrentSceneDialog
+            currentScene={currentScene}
+            isOpen={isCurrentSceneDialogOpen}
+            nameDraft={currentSceneNameDraft}
+            message={currentSceneMessage}
+            isSubmitting={isCurrentSceneSubmitting}
+            onNameDraftChange={setCurrentSceneNameDraft}
+            onMessageChange={setCurrentSceneMessage}
+            onSubmittingChange={setIsCurrentSceneSubmitting}
+            onCurrentSceneChange={setCurrentScene}
+            onClose={() => {
+              setIsCurrentSceneDialogOpen(false);
+              setCurrentSceneMessage("");
+              setCurrentSceneNameDraft("");
+              setIsCurrentSceneSubmitting(false);
+            }}
+          />
+        )}
+
+        {isSceneSwitching && (
+          <div className="backend-scene-switching-overlay" aria-live="polite">
+            <div className="backend-scene-switching-overlay__spinner" />
+            <div className="backend-scene-switching-overlay__title">
+              正在切换画布…
+            </div>
+            <div className="backend-scene-switching-overlay__subtitle">
+              正在保存当前内容并加载目标画布
+            </div>
+          </div>
+        )}
 
         <AppSidebar />
 

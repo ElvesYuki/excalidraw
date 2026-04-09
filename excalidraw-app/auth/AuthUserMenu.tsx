@@ -5,23 +5,26 @@ import DialogActionButton from "@excalidraw/excalidraw/components/DialogActionBu
 
 import { useAuth } from "./AuthGate";
 import {
+  createUserScene,
   adminResetUserPassword,
   fetchAdminUsers,
   fetchMyScenes,
+  fetchUserScenes,
+  openSceneCollab,
+  renameUserScene,
   updateAdminUserStatus,
 } from "./api";
+import { buildSceneCollabUrl } from "./sceneSession";
 
 import type { AdminUserListItem, AuthSceneHistoryItem } from "./types";
+import type { SceneRecord } from "./types";
 
 import "./AuthGate.scss";
 
 const MIN_USERNAME_LENGTH = 3;
 const MIN_PASSWORD_LENGTH = 8;
 
-const getChangePasswordError = (
-  oldPassword: string,
-  newPassword: string,
-) => {
+const getChangePasswordError = (oldPassword: string, newPassword: string) => {
   if (!oldPassword.trim()) {
     return "请输入当前密码";
   }
@@ -69,12 +72,42 @@ const formatAdminUserTime = (value?: number) => {
 const getSceneDisplayName = (item: AuthSceneHistoryItem) =>
   item.sceneName?.trim() || item.roomId;
 
-export const AuthUserMenu = () => {
+const isHistoryItemReadonly = (item: AuthSceneHistoryItem) =>
+  !item.canOpenCollab;
+
+const getSceneAccessErrorMessage = (error: unknown, fallback: string) => {
+  if (!(error instanceof Error)) {
+    return fallback;
+  }
+  const normalized = error.message.trim().toLowerCase();
+  if (
+    normalized.includes("forbidden") ||
+    normalized.includes("无权") ||
+    normalized.includes("权限")
+  ) {
+    return "你当前无权访问这个画布，已请使用仍可访问的画布继续操作。";
+  }
+  if (normalized.includes("not found") || normalized.includes("不存在")) {
+    return "这个画布已经不存在或已失效，请换一个画布试试。";
+  }
+  return error.message || fallback;
+};
+
+type AuthUserMenuProps = {
+  onSceneReady?: (scene: SceneRecord) => void;
+};
+
+export const AuthUserMenu = ({ onSceneReady }: AuthUserMenuProps) => {
   const auth = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [activeDialog, setActiveDialog] = useState<
-    null | "admin-users" | "my-scenes" | "update-profile" | "change-password" | "reset-password"
+    | null
+    | "admin-users"
+    | "user-scenes"
+    | "update-profile"
+    | "change-password"
+    | "reset-password"
   >(null);
   const [editingDisplayName, setEditingDisplayName] = useState("");
   const [oldPassword, setOldPassword] = useState("");
@@ -91,11 +124,21 @@ export const AuthUserMenu = () => {
   } | null>(null);
   const [adminUsersMessage, setAdminUsersMessage] = useState("");
   const [isAdminUsersLoading, setIsAdminUsersLoading] = useState(false);
-  const [adminActingUserId, setAdminActingUserId] = useState<number | null>(null);
+  const [adminActingUserId, setAdminActingUserId] = useState<number | null>(
+    null,
+  );
   const [myScenes, setMyScenes] = useState<AuthSceneHistoryItem[]>([]);
+  const [userScenes, setUserScenes] = useState<SceneRecord[]>([]);
+  const [userScenesSearch, setUserScenesSearch] = useState("");
+  const [userScenesMessage, setUserScenesMessage] = useState("");
+  const [isUserScenesLoading, setIsUserScenesLoading] = useState(false);
+  const [isCreatingScene, setIsCreatingScene] = useState(false);
+  const [editingSceneId, setEditingSceneId] = useState<number | null>(null);
+  const [editingSceneName, setEditingSceneName] = useState("");
   const [mySceneSearch, setMySceneSearch] = useState("");
   const [myScenesMessage, setMyScenesMessage] = useState("");
   const [isMyScenesLoading, setIsMyScenesLoading] = useState(false);
+  const [openingSceneId, setOpeningSceneId] = useState<number | null>(null);
   const [dialogMessage, setDialogMessage] = useState("");
   const [dialogMessageType, setDialogMessageType] = useState<
     "success" | "error" | "info"
@@ -104,11 +147,15 @@ export const AuthUserMenu = () => {
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (!isOpen) {
+    if (!isOpen && !isHistoryOpen) {
       return;
     }
 
     const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest(".Dialog")) {
+        return;
+      }
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setIsOpen(false);
         setIsHistoryOpen(false);
@@ -129,7 +176,7 @@ export const AuthUserMenu = () => {
       window.removeEventListener("pointerdown", handlePointerDown);
       window.removeEventListener("keydown", handleEscape);
     };
-  }, [isOpen]);
+  }, [isHistoryOpen, isOpen]);
 
   if (!auth || auth.authState.status === "loading") {
     return null;
@@ -176,8 +223,15 @@ export const AuthUserMenu = () => {
     setAdminUsersMessage("");
     setAdminActingUserId(null);
     setMySceneSearch("");
+    setUserScenesSearch("");
+    setUserScenesMessage("");
+    setIsUserScenesLoading(false);
+    setIsCreatingScene(false);
+    setEditingSceneId(null);
+    setEditingSceneName("");
     setMyScenesMessage("");
     setIsMyScenesLoading(false);
+    setOpeningSceneId(null);
   };
 
   const loadAdminUsers = async () => {
@@ -208,6 +262,21 @@ export const AuthUserMenu = () => {
       );
     } finally {
       setIsMyScenesLoading(false);
+    }
+  };
+
+  const loadUserScenes = async () => {
+    setIsUserScenesLoading(true);
+    setUserScenesMessage("");
+    try {
+      const result = await fetchUserScenes();
+      setUserScenes(result.items);
+    } catch (error) {
+      setUserScenesMessage(
+        error instanceof Error ? error.message : "加载我的画布失败",
+      );
+    } finally {
+      setIsUserScenesLoading(false);
     }
   };
 
@@ -243,6 +312,7 @@ export const AuthUserMenu = () => {
     return searchableText.includes(normalizedAdminUserSearch);
   });
   const normalizedMySceneSearch = mySceneSearch.trim().toLowerCase();
+  const normalizedUserScenesSearch = userScenesSearch.trim().toLowerCase();
   const filteredMyScenes = myScenes.filter((item) => {
     if (!normalizedMySceneSearch) {
       return true;
@@ -253,6 +323,141 @@ export const AuthUserMenu = () => {
       .toLowerCase();
     return searchableText.includes(normalizedMySceneSearch);
   });
+  const filteredUserScenes = userScenes.filter((item) => {
+    if (!normalizedUserScenesSearch) {
+      return true;
+    }
+    const searchableText = [
+      item.sceneName,
+      item.currentRoomId,
+      String(item.sceneId),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return searchableText.includes(normalizedUserScenesSearch);
+  });
+
+  const openUserScene = async (scene: SceneRecord) => {
+    setOpeningSceneId(scene.sceneId);
+    setUserScenesMessage("");
+    try {
+      const collabRoom = await openSceneCollab(scene.sceneId);
+      const nextScene: SceneRecord = {
+        ...scene,
+        sceneName: collabRoom.sceneName || scene.sceneName,
+        currentRoomId: collabRoom.roomId,
+        isCollabEnabled: true,
+      };
+      onSceneReady?.(nextScene);
+      setActiveDialog(null);
+      window.location.assign(
+        buildSceneCollabUrl({
+          sceneId: collabRoom.sceneId,
+          roomId: collabRoom.roomId,
+          roomKey: collabRoom.roomKey,
+        }),
+      );
+    } catch (error) {
+      setUserScenesMessage(getSceneAccessErrorMessage(error, "打开画布失败"));
+    } finally {
+      setOpeningSceneId(null);
+    }
+  };
+
+  const createAndOpenScene = async () => {
+    setIsCreatingScene(true);
+    setUserScenesMessage("");
+    try {
+      const createdScene = await createUserScene("未命名画布");
+      setUserScenes((prev) => [createdScene, ...prev]);
+      onSceneReady?.(createdScene);
+      await openUserScene(createdScene);
+    } catch (error) {
+      setUserScenesMessage(
+        error instanceof Error ? error.message : "新建画布失败",
+      );
+    } finally {
+      setIsCreatingScene(false);
+    }
+  };
+
+  const renameScene = async () => {
+    const normalizedSceneName = editingSceneName.trim();
+    if (!editingSceneId) {
+      return;
+    }
+    if (!normalizedSceneName) {
+      setUserScenesMessage("请输入画布名称");
+      return;
+    }
+
+    setIsDialogSubmitting(true);
+    setUserScenesMessage("");
+    try {
+      const updatedScene = await renameUserScene(
+        editingSceneId,
+        normalizedSceneName,
+      );
+      setUserScenes((prev) =>
+        prev.map((item) =>
+          item.sceneId === updatedScene.sceneId ? updatedScene : item,
+        ),
+      );
+      onSceneReady?.(updatedScene);
+      setEditingSceneId(null);
+      setEditingSceneName("");
+      setUserScenesMessage("画布名称已更新");
+    } catch (error) {
+      setUserScenesMessage(
+        error instanceof Error ? error.message : "修改画布名称失败",
+      );
+    } finally {
+      setIsDialogSubmitting(false);
+    }
+  };
+
+  const openSceneFromHistory = async (item: AuthSceneHistoryItem) => {
+    const fallbackSceneId = item.sceneId > 0 ? item.sceneId : null;
+    setOpeningSceneId(fallbackSceneId ?? item.sceneRecordId);
+    setMyScenesMessage("");
+    try {
+      if (!fallbackSceneId) {
+        const roomHash = item.roomKey
+          ? `#room=${encodeURIComponent(item.roomId)},${encodeURIComponent(
+              item.roomKey,
+            )}`
+          : `#room=${encodeURIComponent(item.roomId)}`;
+        window.location.assign(`/${roomHash}`);
+        return;
+      }
+
+      const collabRoom = await openSceneCollab(item.sceneId);
+      setActiveDialog(null);
+      onSceneReady?.({
+        sceneId: collabRoom.sceneId,
+        ownerUserId: 0,
+        sceneName: collabRoom.sceneName,
+        status: "active",
+        currentRoomId: collabRoom.roomId,
+        isCollabEnabled: true,
+        latestSceneRecordId: item.sceneRecordId,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+      });
+      window.location.assign(
+        buildSceneCollabUrl({
+          sceneId: collabRoom.sceneId,
+          roomId: collabRoom.roomId,
+          roomKey: collabRoom.roomKey,
+        }),
+      );
+    } catch (error) {
+      setMyScenesMessage(getSceneAccessErrorMessage(error, "打开协作房间失败"));
+    } finally {
+      setOpeningSceneId(null);
+    }
+  };
 
   return (
     <div className="backend-auth-userpanel" ref={menuRef}>
@@ -282,18 +487,14 @@ export const AuthUserMenu = () => {
           >
             <div className="backend-auth-userpanel__menu-header">
               <div className="backend-auth-userpanel__menu-name">历史</div>
-              <div className="backend-auth-userpanel__menu-meta">
-                最近创建或编辑的画布
-              </div>
             </div>
             <label className="backend-auth-native-dialog__label">
-              <span>搜索画布</span>
               <input
                 className="backend-auth-native-dialog__input"
                 type="text"
                 value={mySceneSearch}
                 onChange={(event) => setMySceneSearch(event.target.value)}
-                placeholder="按画布名称或 roomId 搜索"
+                placeholder="搜索画布名称或 roomId"
               />
             </label>
             {myScenesMessage && (
@@ -302,144 +503,170 @@ export const AuthUserMenu = () => {
               </div>
             )}
             <div className="backend-auth-history-panel__list">
-              {filteredMyScenes.map((item) => (
-                <button
-                  key={item.sceneRecordId}
-                  className="backend-auth-history-panel__item"
-                  type="button"
-                  onClick={() => {
-                    setIsHistoryOpen(false);
-                    const collabHash = item.roomKey?.trim()
-                      ? `/#room=${encodeURIComponent(item.roomId)},${encodeURIComponent(item.roomKey)}`
-                      : `/#room=${encodeURIComponent(item.roomId)}`;
-                    window.location.assign(collabHash);
-                  }}
-                >
-                  <span className="backend-auth-history-panel__name">
-                    {getSceneDisplayName(item)}
-                  </span>
-                  <span className="backend-auth-history-panel__meta">
-                    roomId {item.roomId}
-                  </span>
-                  <span className="backend-auth-history-panel__meta">
-                    更新：{formatAdminUserTime(item.updatedAt)}
-                  </span>
-                </button>
-              ))}
-              {!isMyScenesLoading && filteredMyScenes.length === 0 && !myScenesMessage && (
-                <div className="backend-auth-native-dialog__hint">
-                  {myScenes.length === 0
-                    ? "你还没有可展示的历史记录。"
-                    : "没有匹配的画布，请换个关键词试试。"}
-                </div>
-              )}
+              {filteredMyScenes.map((item) => {
+                const isReadonly = isHistoryItemReadonly(item);
+                return (
+                  <button
+                    key={item.sceneRecordId}
+                    className={`backend-auth-history-panel__item ${
+                      isReadonly
+                        ? "backend-auth-history-panel__item--readonly"
+                        : ""
+                    }`}
+                    type="button"
+                    disabled={isReadonly || openingSceneId === item.sceneId}
+                    onClick={() => void openSceneFromHistory(item)}
+                  >
+                    <span className="backend-auth-history-panel__name">
+                      {getSceneDisplayName(item)}
+                    </span>
+                    <span className="backend-auth-history-panel__meta">
+                      {isReadonly ? "只读" : "可打开"} · roomId{" "}
+                      {item.roomId || "未绑定"}
+                    </span>
+                    <span className="backend-auth-history-panel__meta">
+                      {openingSceneId === item.sceneId
+                        ? "打开中..."
+                        : formatAdminUserTime(item.updatedAt)}
+                    </span>
+                  </button>
+                );
+              })}
+              {!isMyScenesLoading &&
+                filteredMyScenes.length === 0 &&
+                !myScenesMessage && (
+                  <div className="backend-auth-native-dialog__hint">
+                    {myScenes.length === 0
+                      ? "你还没有可展示的历史记录。"
+                      : "没有匹配的画布，请换个关键词试试。"}
+                  </div>
+                )}
               {isMyScenesLoading && (
-                <div className="backend-auth-native-dialog__hint">历史记录加载中...</div>
+                <div className="backend-auth-native-dialog__hint">
+                  历史记录加载中...
+                </div>
               )}
             </div>
           </div>
         )}
       </div>
       <div className="backend-auth-userpanel__popover">
-      <button
-        className="backend-auth-userpanel__trigger backend-auth-userpanel__trigger--toolbar"
-        type="button"
-        aria-haspopup="menu"
-        aria-expanded={isOpen}
-        aria-label={`当前用户：${displayName}`}
-        title={displayName}
-        onClick={() => {
-          setIsHistoryOpen(false);
-          setIsOpen((open) => !open);
-        }}
-      >
-        <span className="backend-auth-userpanel__trigger-badge">{badgeLabel}</span>
-      </button>
-      {isOpen && (
-        <div className="backend-auth-userpanel__menu" role="menu">
-          <div className="backend-auth-userpanel__menu-header">
-            <div className="backend-auth-userpanel__menu-name">{displayName}</div>
-            <div className="backend-auth-userpanel__menu-meta">{normalizedRole}</div>
-          </div>
-          <div className="backend-auth-userpanel__actions">
-            {isAdmin && (
+        <button
+          className="backend-auth-userpanel__trigger backend-auth-userpanel__trigger--toolbar"
+          type="button"
+          aria-haspopup="menu"
+          aria-expanded={isOpen}
+          aria-label={`当前用户：${displayName}`}
+          title={displayName}
+          onClick={() => {
+            setIsOpen((open) => !open);
+          }}
+        >
+          <span className="backend-auth-userpanel__trigger-badge">
+            {badgeLabel}
+          </span>
+        </button>
+        {isOpen && (
+          <div className="backend-auth-userpanel__menu" role="menu">
+            <div className="backend-auth-userpanel__menu-header">
+              <div className="backend-auth-userpanel__menu-name">
+                {displayName}
+              </div>
+              <div className="backend-auth-userpanel__menu-meta">
+                {normalizedRole}
+              </div>
+            </div>
+            <div className="backend-auth-userpanel__actions">
+              {isAdmin && (
+                <button
+                  className="backend-auth-userpanel__secondary"
+                  type="button"
+                  onClick={async () => {
+                    setIsOpen(false);
+                    setActiveDialog("admin-users");
+                    await loadAdminUsers();
+                  }}
+                >
+                  用户管理
+                </button>
+              )}
               <button
                 className="backend-auth-userpanel__secondary"
                 type="button"
                 onClick={async () => {
                   setIsOpen(false);
-                  setActiveDialog("admin-users");
-                  await loadAdminUsers();
+                  setActiveDialog("user-scenes");
+                  await loadUserScenes();
                 }}
               >
-                用户管理
+                我的画布
               </button>
-            )}
-            <button
-              className="backend-auth-userpanel__secondary"
-              type="button"
-              onClick={() => {
-                setIsOpen(false);
-                setDialogMessage("");
-                setEditingDisplayName(
-                  displayName || user.displayName || user.username,
-                );
-                setActiveDialog("update-profile");
-              }}
-            >
-              修改昵称
-            </button>
-            <button
-              className="backend-auth-userpanel__secondary"
-              type="button"
-              onClick={() => {
-                setIsOpen(false);
-                setDialogMessage("");
-                setActiveDialog("change-password");
-              }}
-            >
-              修改密码
-            </button>
-            <button
-              className="backend-auth-userpanel__secondary"
-              type="button"
-              onClick={() => {
-                setIsOpen(false);
-                setDialogMessage("");
-                setResetUsername(user.username);
-                setActiveDialog("reset-password");
-              }}
-            >
-              重置密码
-            </button>
-            <button
-              className="backend-auth-userpanel__logout"
-              type="button"
-              onClick={auth.logout}
-            >
-              退出登录
-            </button>
+              <button
+                className="backend-auth-userpanel__secondary"
+                type="button"
+                onClick={async () => {
+                  setIsOpen(false);
+                  setDialogMessage("");
+                  setEditingDisplayName(
+                    displayName || user.displayName || user.username,
+                  );
+                  setActiveDialog("update-profile");
+                }}
+              >
+                修改昵称
+              </button>
+              <button
+                className="backend-auth-userpanel__secondary"
+                type="button"
+                onClick={() => {
+                  setIsOpen(false);
+                  setDialogMessage("");
+                  setActiveDialog("change-password");
+                }}
+              >
+                修改密码
+              </button>
+              <button
+                className="backend-auth-userpanel__secondary"
+                type="button"
+                onClick={() => {
+                  setIsOpen(false);
+                  setDialogMessage("");
+                  setResetUsername(user.username);
+                  setActiveDialog("reset-password");
+                }}
+              >
+                重置密码
+              </button>
+              <button
+                className="backend-auth-userpanel__logout"
+                type="button"
+                onClick={auth.logout}
+              >
+                退出登录
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
       </div>
-      {activeDialog === "my-scenes" && (
+      {activeDialog === "user-scenes" && (
         <Dialog
-          size="small"
-          title="我的历史"
+          size="wide"
+          title="我的画布"
           onCloseRequest={closeDialog}
-          className="backend-auth-native-dialog"
+          className="backend-auth-native-dialog backend-auth-admin-dialog"
         >
           <div className="backend-auth-native-dialog__form">
             <div className="backend-auth-admin-dialog__toolbar">
               <div className="backend-auth-native-dialog__hint">
-                这里展示你最近创建或编辑过的画布记录。
+                这里展示当前账号下的正式画布列表。画布是正式 Scene
+                对象；历史记录则包含你自己的画布和参与过协作的画布。
               </div>
               <DialogActionButton
-                label={isMyScenesLoading ? "刷新中..." : "刷新"}
+                label={isUserScenesLoading ? "刷新中..." : "刷新"}
                 actionType="primary"
-                onClick={() => void loadMyScenes()}
-                disabled={isMyScenesLoading}
+                onClick={() => void loadUserScenes()}
+                disabled={isUserScenesLoading}
               />
             </div>
             <label className="backend-auth-native-dialog__label">
@@ -447,57 +674,143 @@ export const AuthUserMenu = () => {
               <input
                 className="backend-auth-native-dialog__input"
                 type="text"
-                value={mySceneSearch}
-                onChange={(event) => setMySceneSearch(event.target.value)}
-                placeholder="按画布名称或 roomId 搜索"
+                value={userScenesSearch}
+                onChange={(event) => setUserScenesSearch(event.target.value)}
+                placeholder="按画布名称、sceneId 或当前 roomId 搜索"
               />
             </label>
-            {myScenesMessage && (
-              <div className="backend-auth-native-dialog__message backend-auth-native-dialog__message--error">
-                {myScenesMessage}
+            <div className="backend-auth-native-dialog__actions backend-auth-native-dialog__actions--spread">
+              <div className="backend-auth-native-dialog__hint">
+                你可以在这里新建画布、修改名称，或直接打开进入协作。
+              </div>
+              <DialogActionButton
+                label={isCreatingScene ? "创建中..." : "新建画布"}
+                actionType="primary"
+                onClick={() => void createAndOpenScene()}
+                disabled={isCreatingScene}
+              />
+            </div>
+            {userScenesMessage && (
+              <div
+                className={`backend-auth-native-dialog__message ${
+                  userScenesMessage.includes("已更新")
+                    ? "backend-auth-native-dialog__message--success"
+                    : "backend-auth-native-dialog__message--error"
+                }`}
+              >
+                {userScenesMessage}
               </div>
             )}
-            <div className="backend-auth-history-dialog__list">
-              {filteredMyScenes.map((item) => (
+            <div className="backend-auth-admin-dialog__list">
+              {filteredUserScenes.map((item) => (
                 <div
-                  key={item.sceneRecordId}
-                  className="backend-auth-history-dialog__item"
+                  key={item.sceneId}
+                  className="backend-auth-admin-dialog__item"
                 >
-                  <div className="backend-auth-history-dialog__identity">
-                    <div className="backend-auth-history-dialog__room">
-                      {getSceneDisplayName(item)}
+                  <div className="backend-auth-admin-dialog__identity">
+                    <div className="backend-auth-admin-dialog__name">
+                      {editingSceneId === item.sceneId ? (
+                        <input
+                          className="backend-auth-native-dialog__input"
+                          type="text"
+                          autoFocus
+                          value={editingSceneName}
+                          onChange={(event) =>
+                            setEditingSceneName(event.target.value)
+                          }
+                          placeholder="请输入画布名称"
+                        />
+                      ) : (
+                        item.sceneName || `未命名画布 #${item.sceneId}`
+                      )}
                     </div>
-                    <div className="backend-auth-history-dialog__summary">
-                      <span className="backend-auth-history-dialog__meta">
-                        roomId {item.roomId}
+                    <div className="backend-auth-admin-dialog__summary">
+                      <span className="backend-auth-admin-dialog__meta">
+                        sceneId {item.sceneId}
                       </span>
-                      <span className="backend-auth-history-dialog__meta">
-                        版本 {item.version}
+                      <span className="backend-auth-admin-dialog__meta">
+                        {item.currentRoomId
+                          ? `当前 roomId ${item.currentRoomId}`
+                          : "尚未开启协作"}
                       </span>
-                      <span className="backend-auth-history-dialog__meta">
-                        大小 {Math.max(1, Math.round(item.size / 1024))} KB
+                      <span
+                        className={`backend-auth-admin-dialog__badge ${
+                          item.isCollabEnabled
+                            ? "backend-auth-admin-dialog__badge--success"
+                            : "backend-auth-admin-dialog__badge--muted"
+                        }`}
+                      >
+                        {item.isCollabEnabled ? "协作中" : "未开启协作"}
                       </span>
-                      <span className="backend-auth-history-dialog__meta">
+                      <span className="backend-auth-admin-dialog__meta">
                         更新：{formatAdminUserTime(item.updatedAt)}
                       </span>
                     </div>
                   </div>
-                  <button
-                    className="backend-auth-userpanel__secondary backend-auth-history-dialog__open"
-                    type="button"
-                    onClick={() => {
-                      window.location.assign(`/#room=${encodeURIComponent(item.roomId)}`);
-                    }}
-                  >
-                    打开
-                  </button>
+                  <div className="backend-auth-admin-dialog__item-actions">
+                    {editingSceneId === item.sceneId ? (
+                      <>
+                        <button
+                          className="backend-auth-userpanel__secondary backend-auth-admin-dialog__action"
+                          type="button"
+                          disabled={isDialogSubmitting}
+                          onClick={() => {
+                            setEditingSceneId(null);
+                            setEditingSceneName("");
+                            setUserScenesMessage("");
+                          }}
+                        >
+                          取消
+                        </button>
+                        <button
+                          className="backend-auth-userpanel__secondary backend-auth-admin-dialog__action"
+                          type="button"
+                          disabled={isDialogSubmitting}
+                          onClick={() => void renameScene()}
+                        >
+                          {isDialogSubmitting ? "保存中..." : "保存名称"}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          className="backend-auth-userpanel__secondary backend-auth-admin-dialog__action"
+                          type="button"
+                          onClick={() => {
+                            setEditingSceneId(item.sceneId);
+                            setEditingSceneName(item.sceneName || "");
+                            setUserScenesMessage("");
+                          }}
+                        >
+                          修改名称
+                        </button>
+                        <button
+                          className="backend-auth-userpanel__secondary backend-auth-admin-dialog__action"
+                          type="button"
+                          disabled={openingSceneId === item.sceneId}
+                          onClick={() => void openUserScene(item)}
+                        >
+                          {openingSceneId === item.sceneId
+                            ? "打开中..."
+                            : "打开"}
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
               ))}
-              {!isMyScenesLoading && filteredMyScenes.length === 0 && !myScenesMessage && (
+              {!isUserScenesLoading &&
+                filteredUserScenes.length === 0 &&
+                !userScenesMessage && (
+                  <div className="backend-auth-native-dialog__hint">
+                    {userScenes.length === 0
+                      ? "你还没有正式画布，先新建一个吧。"
+                      : "没有匹配的画布，请换个关键词试试。"}
+                  </div>
+                )}
+              {isUserScenesLoading && (
                 <div className="backend-auth-native-dialog__hint">
-                  {myScenes.length === 0
-                    ? "你还没有可展示的历史记录。"
-                    : "没有匹配的画布，请换个关键词试试。"}
+                  画布列表加载中...
                 </div>
               )}
             </div>
@@ -596,7 +909,8 @@ export const AuthUserMenu = () => {
               {filteredAdminUsers.map((item) => {
                 const isActing = adminActingUserId === item.userId;
                 const isCurrentUser = item.userId === user.userId;
-                const nextStatus = item.status === "active" ? "disabled" : "active";
+                const nextStatus =
+                  item.status === "active" ? "disabled" : "active";
                 const disableStatusAction = isActing || isCurrentUser;
 
                 return (
@@ -647,11 +961,7 @@ export const AuthUserMenu = () => {
                         className="backend-auth-userpanel__secondary backend-auth-admin-dialog__action"
                         type="button"
                         disabled={disableStatusAction}
-                        title={
-                          isCurrentUser
-                            ? "当前账号不可禁用"
-                            : undefined
-                        }
+                        title={isCurrentUser ? "当前账号不可禁用" : undefined}
                         onClick={async () => {
                           setAdminActingUserId(item.userId);
                           setAdminUsersMessage("");
@@ -662,7 +972,9 @@ export const AuthUserMenu = () => {
                             );
                             setAdminUsers((prev) =>
                               prev.map((userItem) =>
-                                userItem.userId === updated.userId ? updated : userItem,
+                                userItem.userId === updated.userId
+                                  ? updated
+                                  : userItem,
                               ),
                             );
                           } catch (error) {
@@ -687,7 +999,9 @@ export const AuthUserMenu = () => {
                           setAdminUsersMessage("");
                           setAdminResetResult(null);
                           try {
-                            const result = await adminResetUserPassword(item.userId);
+                            const result = await adminResetUserPassword(
+                              item.userId,
+                            );
                             setAdminUsers((prev) =>
                               prev.map((userItem) =>
                                 userItem.userId === result.user.userId
@@ -719,12 +1033,12 @@ export const AuthUserMenu = () => {
               {!isAdminUsersLoading &&
                 filteredAdminUsers.length === 0 &&
                 !adminUsersMessage && (
-                <div className="backend-auth-native-dialog__hint">
-                  {adminUsers.length === 0
-                    ? "当前还没有可管理的用户记录。"
-                    : "没有匹配的用户，请换个关键词试试。"}
-                </div>
-              )}
+                  <div className="backend-auth-native-dialog__hint">
+                    {adminUsers.length === 0
+                      ? "当前还没有可管理的用户记录。"
+                      : "没有匹配的用户，请换个关键词试试。"}
+                  </div>
+                )}
             </div>
           </div>
         </Dialog>

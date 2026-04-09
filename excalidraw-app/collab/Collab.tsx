@@ -356,17 +356,23 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     }
   };
 
-  stopCollaboration = (keepRemoteState = true) => {
+  stopCollaboration = async (
+    keepRemoteState = true,
+    options?: { persistCurrentScene?: boolean },
+  ) => {
+    const shouldPersistCurrentScene = options?.persistCurrentScene ?? true;
     this.queueBroadcastAllElements.cancel();
     this.queueSaveToFirebase.cancel();
     this.loadImageFiles.cancel();
     this.resetErrorIndicator(true);
 
-    this.saveCollabRoomToFirebase(
-      getSyncableElements(
-        this.excalidrawAPI.getSceneElementsIncludingDeleted(),
-      ),
-    );
+    if (shouldPersistCurrentScene) {
+      await this.saveCollabRoomToFirebase(
+        getSyncableElements(
+          this.excalidrawAPI.getSceneElementsIncludingDeleted(),
+        ),
+      );
+    }
 
     if (this.portal.socket && this.fallbackInitializationHandler) {
       this.portal.socket.off(

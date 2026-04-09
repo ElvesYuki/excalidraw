@@ -85,6 +85,55 @@
     gap: 0.5rem;
   }
 
+  .backend-top-right__scene {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    max-width: min(18rem, 32vw);
+    min-height: var(--lg-button-size);
+    padding: 0 0.8rem;
+    border-radius: var(--border-radius-lg);
+    background: var(--button-gray-1);
+    border: 1px solid transparent;
+    color: var(--text-primary-color);
+    box-sizing: border-box;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .backend-top-right__scene:hover {
+    background: var(--button-gray-2);
+  }
+
+  .backend-top-right__scene:active {
+    background: var(--button-gray-3);
+  }
+
+  .backend-top-right__scene:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--color-primary) 35%, transparent);
+    outline-offset: 2px;
+  }
+
+  .backend-top-right__scene-label {
+    flex: 0 0 auto;
+    font-size: 0.76rem;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--color-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .backend-top-right__scene-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.88rem;
+    font-weight: 600;
+    line-height: 1.2;
+  }
+
   .excalidraw-ui-top-right {
     flex: 0 0 auto;
     margin-inline-end: 0.35rem;
@@ -113,6 +162,53 @@
 .excalidraw-app.is-collaborating {
   [data-testid="clear-canvas-button"] {
     display: none;
+  }
+}
+
+.backend-scene-switching-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--overlay-bg-color) 72%, transparent);
+}
+
+.backend-scene-switching-overlay__spinner {
+  width: 2.8rem;
+  height: 2.8rem;
+  margin: 0;
+  border-radius: 999px;
+  border: 2px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
+  border-top-color: var(--color-primary);
+  animation: backend-scene-switching-spin 0.8s linear infinite;
+}
+
+.backend-scene-switching-overlay__title {
+  margin-top: 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary-color);
+}
+
+.backend-scene-switching-overlay__subtitle {
+  margin-top: 0.35rem;
+  font-size: 0.74rem;
+  line-height: 1.45;
+  color: var(--text-secondary-color);
+  opacity: 0.9;
+}
+
+@keyframes backend-scene-switching-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
   }
 }
 

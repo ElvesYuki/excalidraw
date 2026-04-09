@@ -40,8 +40,7 @@ Set the frontend storage backend URL to this service:
 VITE_APP_STORAGE_BACKEND_URL=http://localhost:3015
 ```
 
-If you reverse proxy the API under the same origin as the frontend, you can leave
-`VITE_APP_STORAGE_BACKEND_URL` unset and route `/api/v1/*` to this service.
+If you reverse proxy the API under the same origin as the frontend, you can leave `VITE_APP_STORAGE_BACKEND_URL` unset and route `/api/v1/*` to this service.
 
 ## Example Nginx routing
 

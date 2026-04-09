@@ -36,7 +36,31 @@ type StoredScenePayload = {
   ciphertext: string;
 };
 
-const normalizeSceneName = (value: string | null | undefined) => value?.trim() || "";
+const isBase64String = (value: string) => {
+  if (!value || typeof value !== "string") {
+    return false;
+  }
+  const normalized = value.trim();
+  if (!normalized || normalized.length % 4 !== 0) {
+    return false;
+  }
+  return /^[A-Za-z0-9+/]+={0,2}$/.test(normalized);
+};
+
+const isStoredScenePayload = (value: unknown): value is StoredScenePayload => {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const candidate = value as Partial<StoredScenePayload>;
+  return (
+    typeof candidate.sceneVersion === "number" &&
+    typeof candidate.iv === "string" &&
+    typeof candidate.ciphertext === "string"
+  );
+};
+
+const normalizeSceneName = (value: string | null | undefined) =>
+  value?.trim() || "";
 
 const API_PREFIX = "/api/v1";
 
@@ -95,7 +119,11 @@ const fetchScene = async (
   if (!response.ok) {
     throw new Error(await getErrorMessage(response));
   }
-  return response.json();
+  const json = await response.json();
+  if (!isStoredScenePayload(json)) {
+    return null;
+  }
+  return json;
 };
 
 const putScene = async (
@@ -115,11 +143,14 @@ const putScene = async (
   if (roomKey.trim()) {
     headers["X-Room-Key"] = roomKey.trim();
   }
-  const response = await authorizedFetch(createStorageUrl(`/scenes/${roomId}`), {
-    method: "PUT",
-    headers,
-    body: JSON.stringify(scene),
-  });
+  const response = await authorizedFetch(
+    createStorageUrl(`/scenes/${roomId}`),
+    {
+      method: "PUT",
+      headers,
+      body: JSON.stringify(scene),
+    },
+  );
   if (!response.ok) {
     throw new Error(await getErrorMessage(response));
   }
@@ -194,6 +225,9 @@ const decryptElements = async (
   data: StoredScenePayload,
   roomKey: string,
 ): Promise<readonly ExcalidrawElement[]> => {
+  if (!isBase64String(data.ciphertext) || !isBase64String(data.iv)) {
+    throw new Error("invalid stored scene payload");
+  }
   const ciphertext = base64ToBytes(data.ciphertext);
   const iv = base64ToBytes(data.iv);
 
@@ -310,17 +344,27 @@ export const saveToFirebase = async (
   let elementsToStore = elements;
 
   if (existingScene) {
-    const prevStoredElements = getSyncableElements(
-      restoreElements(await decryptElements(existingScene, roomKey), null),
-    );
+    try {
+      const prevStoredElements = getSyncableElements(
+        restoreElements(await decryptElements(existingScene, roomKey), null),
+      );
 
-    elementsToStore = getSyncableElements(
-      reconcileElements(
-        elements,
-        prevStoredElements as OrderedExcalidrawElement[] as RemoteExcalidrawElement[],
-        appState,
-      ),
-    );
+      elementsToStore = getSyncableElements(
+        reconcileElements(
+          elements,
+          prevStoredElements as OrderedExcalidrawElement[] as RemoteExcalidrawElement[],
+          appState,
+        ),
+      );
+    } catch (error) {
+      console.warn(
+        "skip invalid stored scene payload and overwrite with current scene",
+        {
+          roomId,
+          error,
+        },
+      );
+    }
   }
 
   const storedScene = await createStoredScene(elementsToStore, roomKey);
