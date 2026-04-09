@@ -8,7 +8,16 @@ import {
 import { currentSceneStateAtom, initialCurrentSceneState } from "./state";
 import { fetchSceneDetail, SceneRequestError } from "./api";
 
-import type { SceneRecord } from "../auth/types";
+import type { SceneDetailRecord, SceneRecord } from "../auth/types";
+
+const toSceneDetailRecord = (scene: SceneRecord): SceneDetailRecord => ({
+  ...scene,
+  ownershipType: "owner",
+  viewerRole: "owner",
+  isFavorite: false,
+  memberCount: 0,
+  members: [],
+});
 
 export const useCurrentScene = () => {
   const [state, setState] = useAtom(currentSceneStateAtom);
@@ -24,7 +33,7 @@ export const useCurrentScene = () => {
       updateSceneIdInUrl(scene.sceneId, true);
       setState({
         status: "ready",
-        scene,
+        scene: toSceneDetailRecord(scene),
         errorMessage: "",
       });
     },

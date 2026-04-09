@@ -1,6 +1,6 @@
 import { authorizedFetch } from "../auth/api";
 
-import type { SceneRecord } from "../auth/types";
+import type { SceneDetailRecord } from "../auth/types";
 
 const API_PREFIX = "/api/v1";
 
@@ -36,7 +36,7 @@ export class SceneRequestError extends Error {
 
 export const fetchSceneDetail = async (
   sceneId: number,
-): Promise<SceneRecord> => {
+): Promise<SceneDetailRecord> => {
   const response = await authorizedFetch(getUserSceneDetailUrl(sceneId));
   if (!response.ok) {
     throw new SceneRequestError(
@@ -45,5 +45,5 @@ export const fetchSceneDetail = async (
     );
   }
   const json = await response.json();
-  return json?.data as SceneRecord;
+  return json?.data as SceneDetailRecord;
 };

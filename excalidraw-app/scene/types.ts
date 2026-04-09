@@ -1,9 +1,9 @@
-import type { SceneRecord } from "../auth/types";
+import type { SceneDetailRecord } from "../auth/types";
 
 export type CurrentSceneStatus = "idle" | "loading" | "ready" | "error";
 
 export type CurrentSceneState = {
   status: CurrentSceneStatus;
-  scene: SceneRecord | null;
+  scene: SceneDetailRecord | null;
   errorMessage: string;
 };

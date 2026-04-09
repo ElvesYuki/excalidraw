@@ -317,26 +317,42 @@ export const AuthUserMenu = ({ onSceneReady }: AuthUserMenuProps) => {
     if (!normalizedMySceneSearch) {
       return true;
     }
-    const searchableText = [item.sceneName, item.roomId]
+    const searchableText = [
+      item.sceneName,
+      item.roomId,
+      item.historySource === "owned" ? "我的" : "协作参与",
+    ]
       .filter(Boolean)
       .join(" ")
       .toLowerCase();
     return searchableText.includes(normalizedMySceneSearch);
   });
-  const filteredUserScenes = userScenes.filter((item) => {
-    if (!normalizedUserScenesSearch) {
-      return true;
-    }
-    const searchableText = [
-      item.sceneName,
-      item.currentRoomId,
-      String(item.sceneId),
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-    return searchableText.includes(normalizedUserScenesSearch);
-  });
+  const filteredUserScenes = userScenes
+    .filter((item) => {
+      if (!normalizedUserScenesSearch) {
+        return true;
+      }
+      const searchableText = [
+        item.sceneName,
+        item.currentRoomId,
+        String(item.sceneId),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return searchableText.includes(normalizedUserScenesSearch);
+    })
+    .sort((left, right) => {
+      const leftOpenedAt = left.lastOpenedAt || 0;
+      const rightOpenedAt = right.lastOpenedAt || 0;
+      if (rightOpenedAt !== leftOpenedAt) {
+        return rightOpenedAt - leftOpenedAt;
+      }
+      if (right.updatedAt !== left.updatedAt) {
+        return right.updatedAt - left.updatedAt;
+      }
+      return right.sceneId - left.sceneId;
+    });
 
   const openUserScene = async (scene: SceneRecord) => {
     setOpeningSceneId(scene.sceneId);
@@ -521,13 +537,16 @@ export const AuthUserMenu = ({ onSceneReady }: AuthUserMenuProps) => {
                       {getSceneDisplayName(item)}
                     </span>
                     <span className="backend-auth-history-panel__meta">
+                      {item.historySource === "owned" ? "我的" : "协作参与"} ·{" "}
                       {isReadonly ? "只读" : "可打开"} · roomId{" "}
                       {item.roomId || "未绑定"}
                     </span>
                     <span className="backend-auth-history-panel__meta">
                       {openingSceneId === item.sceneId
                         ? "打开中..."
-                        : formatAdminUserTime(item.updatedAt)}
+                        : formatAdminUserTime(
+                            item.lastVisitedAt || item.updatedAt,
+                          )}
                     </span>
                   </button>
                 );
@@ -741,6 +760,14 @@ export const AuthUserMenu = ({ onSceneReady }: AuthUserMenuProps) => {
                         }`}
                       >
                         {item.isCollabEnabled ? "协作中" : "未开启协作"}
+                      </span>
+                      <span className="backend-auth-admin-dialog__meta">
+                        最近打开：
+                        {item.lastOpenedAt || item.lastActivatedAt
+                          ? formatAdminUserTime(
+                              item.lastOpenedAt || item.lastActivatedAt,
+                            )
+                          : "未打开"}
                       </span>
                       <span className="backend-auth-admin-dialog__meta">
                         更新：{formatAdminUserTime(item.updatedAt)}

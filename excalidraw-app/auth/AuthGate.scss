@@ -344,6 +344,34 @@
   word-break: break-word;
 }
 
+.backend-auth-native-dialog__member-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.backend-auth-native-dialog__member-item {
+  display: grid;
+  gap: 0.08rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 8px;
+  background: var(--color-surface-low);
+  border: 1px solid
+    color-mix(in srgb, var(--default-border-color) 70%, transparent);
+}
+
+.backend-auth-native-dialog__member-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text-primary-color);
+}
+
+.backend-auth-native-dialog__member-meta {
+  font-size: 0.76rem;
+  line-height: 1.3;
+  color: var(--text-secondary-color);
+}
+
 .backend-auth-native-dialog__actions {
   display: flex;
   justify-content: flex-end;

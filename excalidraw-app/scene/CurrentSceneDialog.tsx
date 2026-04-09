@@ -4,10 +4,10 @@ import DialogActionButton from "@excalidraw/excalidraw/components/DialogActionBu
 import { openSceneCollab, renameUserScene } from "../auth/api";
 import { buildSceneCollabUrl } from "../auth/sceneSession";
 
-import type { SceneRecord } from "../auth/types";
+import type { SceneDetailRecord } from "../auth/types";
 
 type CurrentSceneDialogProps = {
-  currentScene: SceneRecord;
+  currentScene: SceneDetailRecord;
   isOpen: boolean;
   nameDraft: string;
   message: string;
@@ -15,7 +15,7 @@ type CurrentSceneDialogProps = {
   onNameDraftChange: (value: string) => void;
   onMessageChange: (value: string) => void;
   onSubmittingChange: (value: boolean) => void;
-  onCurrentSceneChange: (scene: SceneRecord) => void;
+  onCurrentSceneChange: (scene: SceneDetailRecord) => void;
   onClose: () => void;
 };
 
@@ -90,6 +90,71 @@ export const CurrentSceneDialog = ({
               {formatSceneTime(currentScene.updatedAt)}
             </span>
           </div>
+          <div className="backend-auth-native-dialog__meta-item">
+            <span className="backend-auth-native-dialog__meta-label">
+              所属关系
+            </span>
+            <span className="backend-auth-native-dialog__meta-value">
+              {currentScene.ownershipType === "owner"
+                ? "我的画布"
+                : "协作参与"}
+            </span>
+          </div>
+          <div className="backend-auth-native-dialog__meta-item">
+            <span className="backend-auth-native-dialog__meta-label">
+              我的角色
+            </span>
+            <span className="backend-auth-native-dialog__meta-value">
+              {currentScene.viewerRole || "editor"}
+            </span>
+          </div>
+          <div className="backend-auth-native-dialog__meta-item">
+            <span className="backend-auth-native-dialog__meta-label">
+              收藏
+            </span>
+            <span className="backend-auth-native-dialog__meta-value">
+              {currentScene.isFavorite ? "已收藏" : "未收藏（待开放）"}
+            </span>
+          </div>
+          <div className="backend-auth-native-dialog__meta-item">
+            <span className="backend-auth-native-dialog__meta-label">
+              成员概览
+            </span>
+            <span className="backend-auth-native-dialog__meta-value">
+              {currentScene.memberCount > 0
+                ? `${currentScene.memberCount} 人`
+                : "仅当前成员"}
+            </span>
+          </div>
+        </div>
+        <div className="backend-auth-native-dialog__meta-grid">
+          <div className="backend-auth-native-dialog__meta-item">
+            <span className="backend-auth-native-dialog__meta-label">
+              成员
+            </span>
+            <div className="backend-auth-native-dialog__member-list">
+              {currentScene.members.length > 0 ? (
+                currentScene.members.slice(0, 5).map((member) => (
+                  <div
+                    key={`${member.userId}-${member.relationType}-${member.role}`}
+                    className="backend-auth-native-dialog__member-item"
+                  >
+                    <span className="backend-auth-native-dialog__member-name">
+                      {member.displayName || member.username || `用户 #${member.userId}`}
+                    </span>
+                    <span className="backend-auth-native-dialog__member-meta">
+                      {member.relationType === "owner" ? "拥有者" : "参与者"} ·{" "}
+                      {member.role || "editor"}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <div className="backend-auth-native-dialog__hint">
+                  暂无可展示成员
+                </div>
+              )}
+            </div>
+          </div>
         </div>
         {message && (
           <div
@@ -152,7 +217,10 @@ export const CurrentSceneDialog = ({
                     currentScene.sceneId,
                     nameDraft.trim(),
                   );
-                  onCurrentSceneChange(updatedScene);
+                  onCurrentSceneChange({
+                    ...currentScene,
+                    ...updatedScene,
+                  });
                   onMessageChange("画布名称已更新");
                 } catch (error) {
                   onMessageChange(
