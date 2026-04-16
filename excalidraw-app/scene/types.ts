@@ -6,4 +6,5 @@ export type CurrentSceneState = {
   status: CurrentSceneStatus;
   scene: SceneDetailRecord | null;
   errorMessage: string;
+  isCollabReadOnly: boolean;
 };

@@ -1,6 +1,7 @@
 import { clearStoredAuthToken, getStoredAuthToken, setStoredAuthToken } from "./session";
 
 import type {
+  AddSceneMemberResult,
   AdminUserListItem,
   AdminUserListResult,
   AuthChangePasswordPayload,
@@ -13,6 +14,8 @@ import type {
   SceneListResult,
   SceneRecord,
   SceneOpenCollabResult,
+  RemoveSceneMemberResult,
+  UpdateSceneMemberRoleResult,
 } from "./types";
 
 const API_PREFIX = "/api/v1";
@@ -255,7 +258,10 @@ export const openSceneCollab = async (
   return json?.data as SceneOpenCollabResult;
 };
 
-export const createUserScene = async (sceneName: string): Promise<SceneRecord> => {
+export const createUserScene = async (
+  sceneName: string,
+  collabAccessMode?: "private" | "invite",
+): Promise<SceneRecord> => {
   const response = await authorizedFetch(getUserScenesUrl(), {
     method: "POST",
     headers: {
@@ -263,6 +269,7 @@ export const createUserScene = async (sceneName: string): Promise<SceneRecord> =
     },
     body: JSON.stringify({
       sceneName,
+      collabAccessMode,
     }),
   });
   if (!response.ok) {
@@ -323,6 +330,150 @@ export const renameUserScene = async (
 
   const json = await response.json();
   return json?.data as SceneRecord;
+};
+
+export const setUserSceneFavorite = async (
+  sceneId: number,
+  isFavorite: boolean,
+): Promise<{ sceneId: number; isFavorite: boolean }> => {
+  const response = await authorizedFetch(`${getUserScenesUrl()}/${sceneId}/favorite`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      isFavorite,
+    }),
+  });
+  if (!response.ok) {
+    let message = isFavorite ? "收藏画布失败" : "取消收藏失败";
+    try {
+      const json = await response.json();
+      message = json?.error || json?.msg || message;
+    } catch {
+      // noop
+    }
+    throw new Error(message);
+  }
+
+  const json = await response.json();
+  return json?.data as { sceneId: number; isFavorite: boolean };
+};
+
+export const setUserSceneCollabAccessMode = async (
+  sceneId: number,
+  collabAccessMode: "private" | "invite",
+): Promise<SceneRecord> => {
+  const response = await authorizedFetch(
+    `${getUserScenesUrl()}/${sceneId}/collab-access`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        collabAccessMode,
+      }),
+    },
+  );
+  if (!response.ok) {
+    let message = "更新协作模式失败";
+    try {
+      const json = await response.json();
+      message = json?.error || json?.msg || message;
+    } catch {
+      // noop
+    }
+    throw new Error(message);
+  }
+
+  const json = await response.json();
+  return json?.data as SceneRecord;
+};
+
+export const addUserSceneMember = async (
+  sceneId: number,
+  username: string,
+): Promise<AddSceneMemberResult> => {
+  const response = await authorizedFetch(`${getUserScenesUrl()}/${sceneId}/members`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      username,
+    }),
+  });
+  if (!response.ok) {
+    let message = "添加成员失败";
+    try {
+      const json = await response.json();
+      message = json?.error || json?.msg || message;
+    } catch {
+      // noop
+    }
+    throw new Error(message);
+  }
+
+  const json = await response.json();
+  return json?.data as AddSceneMemberResult;
+};
+
+export const removeUserSceneMember = async (
+  sceneId: number,
+  memberUserId: number,
+): Promise<RemoveSceneMemberResult> => {
+  const response = await authorizedFetch(
+    `${getUserScenesUrl()}/${sceneId}/members/${memberUserId}`,
+    {
+      method: "DELETE",
+    },
+  );
+  if (!response.ok) {
+    let message = "移除成员失败";
+    try {
+      const json = await response.json();
+      message = json?.error || json?.msg || message;
+    } catch {
+      // noop
+    }
+    throw new Error(message);
+  }
+
+  const json = await response.json();
+  return json?.data as RemoveSceneMemberResult;
+};
+
+export const updateUserSceneMemberRole = async (
+  sceneId: number,
+  memberUserId: number,
+  role: "editor" | "viewer",
+): Promise<UpdateSceneMemberRoleResult> => {
+  const response = await authorizedFetch(
+    `${getUserScenesUrl()}/${sceneId}/members/${memberUserId}/role`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        role,
+      }),
+    },
+  );
+  if (!response.ok) {
+    let message = "更新成员角色失败";
+    try {
+      const json = await response.json();
+      message = json?.error || json?.msg || message;
+    } catch {
+      // noop
+    }
+    throw new Error(message);
+  }
+
+  const json = await response.json();
+  return json?.data as UpdateSceneMemberRoleResult;
 };
 
 export const changePassword = async (payload: AuthChangePasswordPayload) => {

@@ -12,17 +12,62 @@ import {
   fetchUserScenes,
   openSceneCollab,
   renameUserScene,
+  setUserSceneFavorite,
   updateAdminUserStatus,
 } from "./api";
 import { buildSceneCollabUrl } from "./sceneSession";
+import { fetchSceneDetail } from "../scene/api";
 
-import type { AdminUserListItem, AuthSceneHistoryItem } from "./types";
-import type { SceneRecord } from "./types";
+import type {
+  AdminUserListItem,
+  AuthSceneHistoryItem,
+  SceneDetailRecord,
+  SceneRecord,
+} from "./types";
 
 import "./AuthGate.scss";
 
 const MIN_USERNAME_LENGTH = 3;
 const MIN_PASSWORD_LENGTH = 8;
+const USER_SCENES_SORT_STORAGE_KEY = "backend-user-scenes-sort";
+const USER_SCENES_STATUS_FILTER_STORAGE_KEY =
+  "backend-user-scenes-status-filter";
+
+const readStoredUserScenesSort = () => {
+  try {
+    const value = window.localStorage.getItem(USER_SCENES_SORT_STORAGE_KEY);
+    if (
+      value === "recent-opened" ||
+      value === "favorite-first" ||
+      value === "recent-updated" ||
+      value === "name"
+    ) {
+      return value;
+    }
+  } catch {
+    // ignore localStorage read failures
+  }
+  return "recent-opened" as const;
+};
+
+const readStoredUserScenesStatusFilter = () => {
+  try {
+    const value = window.localStorage.getItem(
+      USER_SCENES_STATUS_FILTER_STORAGE_KEY,
+    );
+    if (
+      value === "all" ||
+      value === "favorite" ||
+      value === "collab-enabled" ||
+      value === "collab-disabled"
+    ) {
+      return value;
+    }
+  } catch {
+    // ignore localStorage read failures
+  }
+  return "all" as const;
+};
 
 const getChangePasswordError = (oldPassword: string, newPassword: string) => {
   if (!oldPassword.trim()) {
@@ -69,11 +114,77 @@ const formatAdminUserTime = (value?: number) => {
   }).format(date);
 };
 
+const getRecentSceneTimeInfo = (scene: SceneRecord) => {
+  const recentOpenedAt = scene.lastOpenedAt || scene.lastActivatedAt;
+  if (!recentOpenedAt) {
+    return {
+      label: "未打开",
+      detail: "还没有打开记录",
+    };
+  }
+  const diff = Date.now() - recentOpenedAt;
+  const oneHour = 60 * 60 * 1000;
+  const oneDay = 24 * oneHour;
+  const threeDays = 3 * oneDay;
+
+  if (diff < 10 * 60 * 1000) {
+    return {
+      label: "刚刚打开",
+      detail: formatAdminUserTime(recentOpenedAt),
+    };
+  }
+  if (diff < oneHour) {
+    return {
+      label: "1 小时内打开",
+      detail: formatAdminUserTime(recentOpenedAt),
+    };
+  }
+  if (diff < oneDay) {
+    return {
+      label: "今天打开过",
+      detail: formatAdminUserTime(recentOpenedAt),
+    };
+  }
+  if (diff < threeDays) {
+    return {
+      label: "最近 3 天打开过",
+      detail: formatAdminUserTime(recentOpenedAt),
+    };
+  }
+  return {
+    label: "最近打开过",
+    detail: formatAdminUserTime(recentOpenedAt),
+  };
+};
+
 const getSceneDisplayName = (item: AuthSceneHistoryItem) =>
   item.sceneName?.trim() || item.roomId;
 
 const isHistoryItemReadonly = (item: AuthSceneHistoryItem) =>
   !item.canOpenCollab;
+
+const getHistoryGroupSummary = (
+  items: AuthSceneHistoryItem[],
+  emptyLabel: string,
+) => {
+  if (items.length === 0) {
+    return emptyLabel;
+  }
+  const openableCount = items.filter((item) => item.canOpenCollab).length;
+  if (openableCount === items.length) {
+    return `${items.length} 个可快速切换`;
+  }
+  if (openableCount === 0) {
+    return `${items.length} 个只读记录`;
+  }
+  return `${openableCount} 个可切换，${items.length - openableCount} 个只读`;
+};
+
+const getHistoryTimeLabel = (item: AuthSceneHistoryItem) =>
+  formatAdminUserTime(item.lastVisitedAt || item.updatedAt);
+
+const getHistorySourceLabel = (item: AuthSceneHistoryItem) =>
+  item.historySource === "owned" ? "我的画布" : "协作参与";
 
 const getSceneAccessErrorMessage = (error: unknown, fallback: string) => {
   if (!(error instanceof Error)) {
@@ -95,9 +206,21 @@ const getSceneAccessErrorMessage = (error: unknown, fallback: string) => {
 
 type AuthUserMenuProps = {
   onSceneReady?: (scene: SceneRecord) => void;
+  currentSceneId?: number | null;
+  onSceneDetailRequest?: (scene: SceneDetailRecord) => void;
+  onSceneDialogOpen?: () => void;
+  sceneDetailSnapshot?: SceneDetailRecord | null;
+  sceneSnapshot?: SceneRecord | null;
 };
 
-export const AuthUserMenu = ({ onSceneReady }: AuthUserMenuProps) => {
+export const AuthUserMenu = ({
+  onSceneReady,
+  currentSceneId,
+  onSceneDetailRequest,
+  onSceneDialogOpen,
+  sceneDetailSnapshot,
+  sceneSnapshot,
+}: AuthUserMenuProps) => {
   const auth = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -130,15 +253,29 @@ export const AuthUserMenu = ({ onSceneReady }: AuthUserMenuProps) => {
   const [myScenes, setMyScenes] = useState<AuthSceneHistoryItem[]>([]);
   const [userScenes, setUserScenes] = useState<SceneRecord[]>([]);
   const [userScenesSearch, setUserScenesSearch] = useState("");
+  const [userScenesSort, setUserScenesSort] = useState<
+    "recent-opened" | "favorite-first" | "recent-updated" | "name"
+  >(readStoredUserScenesSort);
+  const [userScenesStatusFilter, setUserScenesStatusFilter] = useState<
+    "all" | "favorite" | "collab-enabled" | "collab-disabled"
+  >(readStoredUserScenesStatusFilter);
   const [userScenesMessage, setUserScenesMessage] = useState("");
   const [isUserScenesLoading, setIsUserScenesLoading] = useState(false);
   const [isCreatingScene, setIsCreatingScene] = useState(false);
   const [editingSceneId, setEditingSceneId] = useState<number | null>(null);
   const [editingSceneName, setEditingSceneName] = useState("");
+  const [recentlyOpenedSceneId, setRecentlyOpenedSceneId] = useState<
+    number | null
+  >(null);
+  const [recentlyVisitedHistorySceneId, setRecentlyVisitedHistorySceneId] =
+    useState<number | null>(null);
   const [mySceneSearch, setMySceneSearch] = useState("");
   const [myScenesMessage, setMyScenesMessage] = useState("");
   const [isMyScenesLoading, setIsMyScenesLoading] = useState(false);
   const [openingSceneId, setOpeningSceneId] = useState<number | null>(null);
+  const [openingSceneDetailId, setOpeningSceneDetailId] = useState<number | null>(
+    null,
+  );
   const [dialogMessage, setDialogMessage] = useState("");
   const [dialogMessageType, setDialogMessageType] = useState<
     "success" | "error" | "info"
@@ -177,6 +314,120 @@ export const AuthUserMenu = ({ onSceneReady }: AuthUserMenuProps) => {
       window.removeEventListener("keydown", handleEscape);
     };
   }, [isHistoryOpen, isOpen]);
+
+  useEffect(() => {
+    if (!recentlyOpenedSceneId) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setRecentlyOpenedSceneId(null);
+    }, 2600);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [recentlyOpenedSceneId]);
+
+  useEffect(() => {
+    if (!recentlyVisitedHistorySceneId) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setRecentlyVisitedHistorySceneId(null);
+    }, 2600);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [recentlyVisitedHistorySceneId]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        USER_SCENES_SORT_STORAGE_KEY,
+        userScenesSort,
+      );
+    } catch {
+      // ignore localStorage write failures
+    }
+  }, [userScenesSort]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        USER_SCENES_STATUS_FILTER_STORAGE_KEY,
+        userScenesStatusFilter,
+      );
+    } catch {
+      // ignore localStorage write failures
+    }
+  }, [userScenesStatusFilter]);
+
+  useEffect(() => {
+    if (!sceneDetailSnapshot) {
+      return;
+    }
+
+    setUserScenes((prev) =>
+      prev.map((item) =>
+        item.sceneId === sceneDetailSnapshot.sceneId
+          ? {
+              ...item,
+              sceneName: sceneDetailSnapshot.sceneName,
+              collabAccessMode: sceneDetailSnapshot.collabAccessMode,
+              currentRoomId: sceneDetailSnapshot.currentRoomId,
+              isCollabEnabled: sceneDetailSnapshot.isCollabEnabled,
+              isFavorite: sceneDetailSnapshot.isFavorite,
+              latestSceneRecordId: sceneDetailSnapshot.latestSceneRecordId,
+              lastActivatedAt: sceneDetailSnapshot.lastActivatedAt,
+              lastOpenedAt: sceneDetailSnapshot.lastOpenedAt,
+              updatedAt: sceneDetailSnapshot.updatedAt,
+              memberCount: sceneDetailSnapshot.memberCount,
+            }
+          : item,
+      ),
+    );
+  }, [sceneDetailSnapshot]);
+
+  useEffect(() => {
+    if (!sceneSnapshot) {
+      return;
+    }
+
+    setUserScenes((prev) =>
+      prev.map((item) =>
+        item.sceneId === sceneSnapshot.sceneId
+          ? {
+              ...item,
+              ...sceneSnapshot,
+            }
+          : item,
+      ),
+    );
+
+    setMyScenes((prev) =>
+      prev.map((item) =>
+        item.sceneId === sceneSnapshot.sceneId
+          ? {
+              ...item,
+              sceneName: sceneSnapshot.sceneName,
+              isFavorite: sceneSnapshot.isFavorite,
+              isCollabEnabled: sceneSnapshot.isCollabEnabled,
+              updatedAt: sceneSnapshot.updatedAt,
+              lastVisitedAt:
+                sceneSnapshot.lastOpenedAt ||
+                sceneSnapshot.lastActivatedAt ||
+                item.lastVisitedAt,
+              canOpenCollab:
+                item.canOpenCollab ||
+                Boolean(sceneSnapshot.currentRoomId || sceneSnapshot.isCollabEnabled),
+            }
+          : item,
+      ),
+    );
+  }, [sceneSnapshot]);
 
   if (!auth || auth.authState.status === "loading") {
     return null;
@@ -224,6 +475,8 @@ export const AuthUserMenu = ({ onSceneReady }: AuthUserMenuProps) => {
     setAdminActingUserId(null);
     setMySceneSearch("");
     setUserScenesSearch("");
+    setUserScenesSort("recent-opened");
+    setUserScenesStatusFilter("all");
     setUserScenesMessage("");
     setIsUserScenesLoading(false);
     setIsCreatingScene(false);
@@ -232,6 +485,7 @@ export const AuthUserMenu = ({ onSceneReady }: AuthUserMenuProps) => {
     setMyScenesMessage("");
     setIsMyScenesLoading(false);
     setOpeningSceneId(null);
+    setOpeningSceneDetailId(null);
   };
 
   const loadAdminUsers = async () => {
@@ -327,8 +581,32 @@ export const AuthUserMenu = ({ onSceneReady }: AuthUserMenuProps) => {
       .toLowerCase();
     return searchableText.includes(normalizedMySceneSearch);
   });
+  const ownedHistoryScenes = filteredMyScenes.filter(
+    (item) => item.historySource === "owned",
+  );
+  const collabHistoryScenes = filteredMyScenes.filter(
+    (item) => item.historySource !== "owned",
+  );
   const filteredUserScenes = userScenes
     .filter((item) => {
+      if (
+        userScenesStatusFilter === "favorite" &&
+        !item.isFavorite
+      ) {
+        return false;
+      }
+      if (
+        userScenesStatusFilter === "collab-enabled" &&
+        !item.isCollabEnabled
+      ) {
+        return false;
+      }
+      if (
+        userScenesStatusFilter === "collab-disabled" &&
+        item.isCollabEnabled
+      ) {
+        return false;
+      }
       if (!normalizedUserScenesSearch) {
         return true;
       }
@@ -343,8 +621,34 @@ export const AuthUserMenu = ({ onSceneReady }: AuthUserMenuProps) => {
       return searchableText.includes(normalizedUserScenesSearch);
     })
     .sort((left, right) => {
-      const leftOpenedAt = left.lastOpenedAt || 0;
-      const rightOpenedAt = right.lastOpenedAt || 0;
+      if (userScenesSort === "favorite-first") {
+        if (left.isFavorite !== right.isFavorite) {
+          return left.isFavorite ? -1 : 1;
+        }
+      }
+
+      if (userScenesSort === "name") {
+        const compareResult = (left.sceneName || "").localeCompare(
+          right.sceneName || "",
+          "zh-CN",
+          {
+            numeric: true,
+            sensitivity: "base",
+          },
+        );
+        if (compareResult !== 0) {
+          return compareResult;
+        }
+      }
+
+      if (userScenesSort === "recent-updated") {
+        if (right.updatedAt !== left.updatedAt) {
+          return right.updatedAt - left.updatedAt;
+        }
+      }
+
+      const leftOpenedAt = left.lastOpenedAt || left.lastActivatedAt || 0;
+      const rightOpenedAt = right.lastOpenedAt || right.lastActivatedAt || 0;
       if (rightOpenedAt !== leftOpenedAt) {
         return rightOpenedAt - leftOpenedAt;
       }
@@ -359,12 +663,19 @@ export const AuthUserMenu = ({ onSceneReady }: AuthUserMenuProps) => {
     setUserScenesMessage("");
     try {
       const collabRoom = await openSceneCollab(scene.sceneId);
+      const openedAt = Date.now();
       const nextScene: SceneRecord = {
         ...scene,
         sceneName: collabRoom.sceneName || scene.sceneName,
         currentRoomId: collabRoom.roomId,
         isCollabEnabled: true,
+        lastActivatedAt: openedAt,
+        lastOpenedAt: openedAt,
       };
+      setUserScenes((prev) =>
+        prev.map((item) => (item.sceneId === nextScene.sceneId ? nextScene : item)),
+      );
+      setRecentlyOpenedSceneId(nextScene.sceneId);
       onSceneReady?.(nextScene);
       setActiveDialog(null);
       window.location.assign(
@@ -449,17 +760,55 @@ export const AuthUserMenu = ({ onSceneReady }: AuthUserMenuProps) => {
       }
 
       const collabRoom = await openSceneCollab(item.sceneId);
+      const openedAt = Date.now();
+      setRecentlyVisitedHistorySceneId(item.sceneId);
+      setRecentlyOpenedSceneId(item.sceneId);
+      setMyScenes((prev) =>
+        prev.map((historyItem) =>
+          historyItem.sceneId === item.sceneId
+            ? {
+                ...historyItem,
+                sceneName: collabRoom.sceneName || historyItem.sceneName,
+                roomId: collabRoom.roomId || historyItem.roomId,
+                canOpenCollab: true,
+                isCollabEnabled: true,
+                lastVisitedAt: openedAt,
+                updatedAt: Math.max(historyItem.updatedAt, openedAt),
+              }
+            : historyItem,
+        ),
+      );
+      setUserScenes((prev) =>
+        prev.map((scene) =>
+          scene.sceneId === item.sceneId
+            ? {
+                ...scene,
+                sceneName: collabRoom.sceneName || scene.sceneName,
+                currentRoomId: collabRoom.roomId,
+                isCollabEnabled: true,
+                lastActivatedAt: openedAt,
+                lastOpenedAt: openedAt,
+                updatedAt: Math.max(scene.updatedAt, openedAt),
+              }
+            : scene,
+        ),
+      );
       setActiveDialog(null);
       onSceneReady?.({
         sceneId: collabRoom.sceneId,
         ownerUserId: 0,
         sceneName: collabRoom.sceneName,
         status: "active",
+        collabAccessMode: "private",
         currentRoomId: collabRoom.roomId,
         isCollabEnabled: true,
+        isFavorite: false,
+        memberCount: 0,
         latestSceneRecordId: item.sceneRecordId,
         createdAt: item.createdAt,
-        updatedAt: item.updatedAt,
+        updatedAt: Math.max(item.updatedAt, openedAt),
+        lastActivatedAt: openedAt,
+        lastOpenedAt: openedAt,
       });
       window.location.assign(
         buildSceneCollabUrl({
@@ -472,6 +821,26 @@ export const AuthUserMenu = ({ onSceneReady }: AuthUserMenuProps) => {
       setMyScenesMessage(getSceneAccessErrorMessage(error, "打开协作房间失败"));
     } finally {
       setOpeningSceneId(null);
+    }
+  };
+
+  const openSceneDetailFromList = async (sceneId: number) => {
+    if (!onSceneDetailRequest || !onSceneDialogOpen) {
+      return;
+    }
+    setOpeningSceneDetailId(sceneId);
+    setUserScenesMessage("");
+    try {
+      const sceneDetail = await fetchSceneDetail(sceneId);
+      onSceneDetailRequest(sceneDetail);
+      onSceneDialogOpen();
+      setActiveDialog(null);
+    } catch (error) {
+      setUserScenesMessage(
+        error instanceof Error ? error.message : "加载画布详情失败",
+      );
+    } finally {
+      setOpeningSceneDetailId(null);
     }
   };
 
@@ -519,38 +888,180 @@ export const AuthUserMenu = ({ onSceneReady }: AuthUserMenuProps) => {
               </div>
             )}
             <div className="backend-auth-history-panel__list">
-              {filteredMyScenes.map((item) => {
-                const isReadonly = isHistoryItemReadonly(item);
-                return (
-                  <button
-                    key={item.sceneRecordId}
-                    className={`backend-auth-history-panel__item ${
-                      isReadonly
-                        ? "backend-auth-history-panel__item--readonly"
-                        : ""
-                    }`}
-                    type="button"
-                    disabled={isReadonly || openingSceneId === item.sceneId}
-                    onClick={() => void openSceneFromHistory(item)}
-                  >
-                    <span className="backend-auth-history-panel__name">
-                      {getSceneDisplayName(item)}
-                    </span>
-                    <span className="backend-auth-history-panel__meta">
-                      {item.historySource === "owned" ? "我的" : "协作参与"} ·{" "}
-                      {isReadonly ? "只读" : "可打开"} · roomId{" "}
-                      {item.roomId || "未绑定"}
-                    </span>
-                    <span className="backend-auth-history-panel__meta">
-                      {openingSceneId === item.sceneId
-                        ? "打开中..."
-                        : formatAdminUserTime(
-                            item.lastVisitedAt || item.updatedAt,
-                          )}
-                    </span>
-                  </button>
-                );
-              })}
+              {ownedHistoryScenes.length > 0 && (
+                <div className="backend-auth-history-panel__group">
+                  <div className="backend-auth-history-panel__group-header">
+                    <div className="backend-auth-history-panel__group-title">
+                      我的画布
+                    </div>
+                    <div className="backend-auth-history-panel__group-meta">
+                      {getHistoryGroupSummary(
+                        ownedHistoryScenes,
+                        "还没有我的画布记录",
+                      )}
+                    </div>
+                  </div>
+                  {ownedHistoryScenes.map((item) => {
+                    const isReadonly = isHistoryItemReadonly(item);
+                    return (
+                      <button
+                        key={item.sceneRecordId}
+                        className={`backend-auth-history-panel__item ${
+                          item.historySource === "owned"
+                            ? "backend-auth-history-panel__item--owned"
+                            : "backend-auth-history-panel__item--collab"
+                        } ${
+                          recentlyVisitedHistorySceneId === item.sceneId
+                            ? "backend-auth-history-panel__item--highlighted"
+                            : ""
+                        } ${
+                          isReadonly
+                            ? "backend-auth-history-panel__item--readonly"
+                            : ""
+                        }`}
+                        type="button"
+                        disabled={isReadonly || openingSceneId === item.sceneId}
+                        onClick={() => void openSceneFromHistory(item)}
+                      >
+                        <div className="backend-auth-history-panel__item-head">
+                          <span className="backend-auth-history-panel__name">
+                            {getSceneDisplayName(item)}
+                          </span>
+                          <div className="backend-auth-history-panel__badges">
+                            <span
+                              className={`backend-auth-history-panel__badge ${
+                                item.historySource === "owned"
+                                  ? "backend-auth-history-panel__badge--owned"
+                                  : "backend-auth-history-panel__badge--collab"
+                              }`}
+                            >
+                              {getHistorySourceLabel(item)}
+                            </span>
+                            <span
+                              className={`backend-auth-history-panel__badge ${
+                                isReadonly
+                                  ? "backend-auth-history-panel__badge--readonly"
+                                  : "backend-auth-history-panel__badge--openable"
+                              }`}
+                            >
+                              {isReadonly ? "只读" : "可打开"}
+                            </span>
+                            {item.historySource === "owned" &&
+                              item.isFavorite && (
+                                <span className="backend-auth-history-panel__badge backend-auth-history-panel__badge--favorite">
+                                  收藏
+                                </span>
+                              )}
+                            {item.historySource === "owned" &&
+                              item.isCollabEnabled && (
+                                <span className="backend-auth-history-panel__badge backend-auth-history-panel__badge--active">
+                                  协作中
+                                </span>
+                              )}
+                          </div>
+                        </div>
+                        <span className="backend-auth-history-panel__meta">
+                          roomId {item.roomId || "未绑定"}
+                        </span>
+                        <div className="backend-auth-history-panel__foot">
+                          <span className="backend-auth-history-panel__meta backend-auth-history-panel__meta--time">
+                            {openingSceneId === item.sceneId
+                              ? "正在切换..."
+                              : `最近访问 ${getHistoryTimeLabel(item)}`}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {collabHistoryScenes.length > 0 && (
+                <div className="backend-auth-history-panel__group">
+                  <div className="backend-auth-history-panel__group-header">
+                    <div className="backend-auth-history-panel__group-title">
+                      协作参与
+                    </div>
+                    <div className="backend-auth-history-panel__group-meta">
+                      {getHistoryGroupSummary(
+                        collabHistoryScenes,
+                        "还没有协作参与记录",
+                      )}
+                    </div>
+                  </div>
+                  {collabHistoryScenes.map((item) => {
+                    const isReadonly = isHistoryItemReadonly(item);
+                    return (
+                      <button
+                        key={item.sceneRecordId}
+                        className={`backend-auth-history-panel__item ${
+                          item.historySource === "owned"
+                            ? "backend-auth-history-panel__item--owned"
+                            : "backend-auth-history-panel__item--collab"
+                        } ${
+                          recentlyVisitedHistorySceneId === item.sceneId
+                            ? "backend-auth-history-panel__item--highlighted"
+                            : ""
+                        } ${
+                          isReadonly
+                            ? "backend-auth-history-panel__item--readonly"
+                            : ""
+                        }`}
+                        type="button"
+                        disabled={isReadonly || openingSceneId === item.sceneId}
+                        onClick={() => void openSceneFromHistory(item)}
+                      >
+                        <div className="backend-auth-history-panel__item-head">
+                          <span className="backend-auth-history-panel__name">
+                            {getSceneDisplayName(item)}
+                          </span>
+                          <div className="backend-auth-history-panel__badges">
+                            <span
+                              className={`backend-auth-history-panel__badge ${
+                                item.historySource === "owned"
+                                  ? "backend-auth-history-panel__badge--owned"
+                                  : "backend-auth-history-panel__badge--collab"
+                              }`}
+                            >
+                              {getHistorySourceLabel(item)}
+                            </span>
+                            <span
+                              className={`backend-auth-history-panel__badge ${
+                                isReadonly
+                                  ? "backend-auth-history-panel__badge--readonly"
+                                  : "backend-auth-history-panel__badge--openable"
+                              }`}
+                            >
+                              {isReadonly ? "只读" : "可打开"}
+                            </span>
+                            {item.historySource === "owned" &&
+                              item.isFavorite && (
+                                <span className="backend-auth-history-panel__badge backend-auth-history-panel__badge--favorite">
+                                  收藏
+                                </span>
+                              )}
+                            {item.historySource === "owned" &&
+                              item.isCollabEnabled && (
+                                <span className="backend-auth-history-panel__badge backend-auth-history-panel__badge--active">
+                                  协作中
+                                </span>
+                              )}
+                          </div>
+                        </div>
+                        <span className="backend-auth-history-panel__meta">
+                          roomId {item.roomId || "未绑定"}
+                        </span>
+                        <div className="backend-auth-history-panel__foot">
+                          <span className="backend-auth-history-panel__meta backend-auth-history-panel__meta--time">
+                            {openingSceneId === item.sceneId
+                              ? "正在切换..."
+                              : `最近访问 ${getHistoryTimeLabel(item)}`}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
               {!isMyScenesLoading &&
                 filteredMyScenes.length === 0 &&
                 !myScenesMessage && (
@@ -698,6 +1209,55 @@ export const AuthUserMenu = ({ onSceneReady }: AuthUserMenuProps) => {
                 placeholder="按画布名称、sceneId 或当前 roomId 搜索"
               />
             </label>
+            <div className="backend-auth-admin-dialog__toolbar backend-auth-admin-dialog__toolbar--scene-filters">
+              <div className="backend-auth-native-dialog__hint">
+                共 {filteredUserScenes.length} 个结果，默认按最近打开排序。
+              </div>
+              <div className="backend-auth-admin-dialog__filters">
+                <label className="backend-auth-native-dialog__label backend-auth-admin-dialog__filter">
+                  <span>状态筛选</span>
+                  <select
+                    className="backend-auth-native-dialog__input backend-auth-native-dialog__select"
+                    value={userScenesStatusFilter}
+                    onChange={(event) =>
+                      setUserScenesStatusFilter(
+                        event.target.value as
+                          | "all"
+                          | "favorite"
+                          | "collab-enabled"
+                          | "collab-disabled",
+                      )
+                    }
+                  >
+                    <option value="all">全部画布</option>
+                    <option value="favorite">仅看收藏</option>
+                    <option value="collab-enabled">仅看协作中</option>
+                    <option value="collab-disabled">仅看未开启协作</option>
+                  </select>
+                </label>
+                <label className="backend-auth-native-dialog__label backend-auth-admin-dialog__filter">
+                  <span>排序方式</span>
+                  <select
+                    className="backend-auth-native-dialog__input backend-auth-native-dialog__select"
+                    value={userScenesSort}
+                    onChange={(event) =>
+                      setUserScenesSort(
+                        event.target.value as
+                          | "recent-opened"
+                          | "favorite-first"
+                          | "recent-updated"
+                          | "name",
+                      )
+                    }
+                  >
+                    <option value="recent-opened">最近打开优先</option>
+                    <option value="favorite-first">收藏优先</option>
+                    <option value="recent-updated">最近更新优先</option>
+                    <option value="name">按名称排序</option>
+                  </select>
+                </label>
+              </div>
+            </div>
             <div className="backend-auth-native-dialog__actions backend-auth-native-dialog__actions--spread">
               <div className="backend-auth-native-dialog__hint">
                 你可以在这里新建画布、修改名称，或直接打开进入协作。
@@ -721,111 +1281,197 @@ export const AuthUserMenu = ({ onSceneReady }: AuthUserMenuProps) => {
               </div>
             )}
             <div className="backend-auth-admin-dialog__list">
-              {filteredUserScenes.map((item) => (
-                <div
-                  key={item.sceneId}
-                  className="backend-auth-admin-dialog__item"
-                >
-                  <div className="backend-auth-admin-dialog__identity">
-                    <div className="backend-auth-admin-dialog__name">
+              {filteredUserScenes.map((item) => {
+                const recentTimeInfo = getRecentSceneTimeInfo(item);
+                return (
+                  <div
+                    key={item.sceneId}
+                    className={`backend-auth-admin-dialog__item ${
+                      currentSceneId === item.sceneId
+                        ? "backend-auth-admin-dialog__item--current"
+                        : ""
+                    } ${
+                      recentlyOpenedSceneId === item.sceneId
+                        ? "backend-auth-admin-dialog__item--highlighted"
+                        : ""
+                    }`}
+                  >
+                    <div className="backend-auth-admin-dialog__identity">
+                      <div className="backend-auth-admin-dialog__title-row">
+                        <div className="backend-auth-admin-dialog__name">
+                          {editingSceneId === item.sceneId ? (
+                            <input
+                              className="backend-auth-native-dialog__input"
+                              type="text"
+                              autoFocus
+                              value={editingSceneName}
+                              onChange={(event) =>
+                                setEditingSceneName(event.target.value)
+                              }
+                              placeholder="请输入画布名称"
+                            />
+                          ) : (
+                            item.sceneName || `未命名画布 #${item.sceneId}`
+                          )}
+                        </div>
+                        {currentSceneId === item.sceneId && (
+                          <span className="backend-auth-admin-dialog__current-badge">
+                            当前画布
+                          </span>
+                        )}
+                        {recentlyOpenedSceneId === item.sceneId && (
+                          <span className="backend-auth-admin-dialog__badge backend-auth-admin-dialog__badge--recent">
+                            刚刚打开
+                          </span>
+                        )}
+                      </div>
+                      <div className="backend-auth-admin-dialog__summary">
+                        <span className="backend-auth-admin-dialog__meta">
+                          sceneId {item.sceneId}
+                        </span>
+                        <span className="backend-auth-admin-dialog__meta">
+                          成员 {item.memberCount > 0 ? `${item.memberCount} 人` : "仅自己"}
+                        </span>
+                        {item.isFavorite && (
+                          <span className="backend-auth-admin-dialog__badge backend-auth-admin-dialog__badge--favorite">
+                            收藏
+                          </span>
+                        )}
+                        <span
+                          className={`backend-auth-admin-dialog__badge ${
+                            item.isCollabEnabled
+                              ? "backend-auth-admin-dialog__badge--success"
+                              : "backend-auth-admin-dialog__badge--muted"
+                          }`}
+                        >
+                          {item.isCollabEnabled ? "协作中" : "未开启协作"}
+                        </span>
+                        <span className="backend-auth-admin-dialog__timeline-status">
+                          {recentTimeInfo.label}
+                        </span>
+                        <span className="backend-auth-admin-dialog__timeline-secondary">
+                          打开 {recentTimeInfo.detail}
+                        </span>
+                        <span className="backend-auth-admin-dialog__timeline-secondary">
+                          更新 {formatAdminUserTime(item.updatedAt)}
+                        </span>
+                        {item.currentRoomId && (
+                          <span className="backend-auth-admin-dialog__timeline-secondary">
+                            roomId {item.currentRoomId}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div
+                      className={`backend-auth-admin-dialog__item-actions ${
+                        currentSceneId === item.sceneId
+                          ? "backend-auth-admin-dialog__item-actions--current"
+                          : ""
+                      }`}
+                    >
                       {editingSceneId === item.sceneId ? (
-                        <input
-                          className="backend-auth-native-dialog__input"
-                          type="text"
-                          autoFocus
-                          value={editingSceneName}
-                          onChange={(event) =>
-                            setEditingSceneName(event.target.value)
-                          }
-                          placeholder="请输入画布名称"
-                        />
+                        <>
+                          <button
+                            className="backend-auth-userpanel__secondary backend-auth-admin-dialog__action"
+                            type="button"
+                            disabled={isDialogSubmitting}
+                            onClick={() => {
+                              setEditingSceneId(null);
+                              setEditingSceneName("");
+                              setUserScenesMessage("");
+                            }}
+                          >
+                            取消
+                          </button>
+                          <button
+                            className="backend-auth-userpanel__secondary backend-auth-admin-dialog__action backend-auth-admin-dialog__action--primary"
+                            type="button"
+                            disabled={isDialogSubmitting}
+                            onClick={() => void renameScene()}
+                          >
+                            {isDialogSubmitting ? "保存中..." : "保存"}
+                          </button>
+                        </>
                       ) : (
-                        item.sceneName || `未命名画布 #${item.sceneId}`
+                        <>
+                          <button
+                            className="backend-auth-userpanel__secondary backend-auth-admin-dialog__action"
+                            type="button"
+                            disabled={openingSceneDetailId === item.sceneId}
+                            onClick={() => void openSceneDetailFromList(item.sceneId)}
+                          >
+                            {openingSceneDetailId === item.sceneId ? "加载中..." : "详情"}
+                          </button>
+                          <button
+                            className="backend-auth-userpanel__secondary backend-auth-admin-dialog__action"
+                            type="button"
+                            disabled={isDialogSubmitting}
+                            onClick={async () => {
+                              setIsDialogSubmitting(true);
+                              setUserScenesMessage("");
+                              try {
+                                const result = await setUserSceneFavorite(
+                                  item.sceneId,
+                                  !item.isFavorite,
+                                );
+                                setUserScenes((prev) =>
+                                  prev.map((scene) =>
+                                    scene.sceneId === item.sceneId
+                                      ? {
+                                          ...scene,
+                                          isFavorite: result.isFavorite,
+                                        }
+                                      : scene,
+                                  ),
+                                );
+                                setUserScenesMessage(
+                                  result.isFavorite ? "已加入收藏" : "已取消收藏",
+                                );
+                              } catch (error) {
+                                setUserScenesMessage(
+                                  error instanceof Error
+                                    ? error.message
+                                    : "更新收藏状态失败",
+                                );
+                              } finally {
+                                setIsDialogSubmitting(false);
+                              }
+                            }}
+                          >
+                            {item.isFavorite ? "取消收藏" : "收藏"}
+                          </button>
+                          <button
+                            className="backend-auth-userpanel__secondary backend-auth-admin-dialog__action"
+                            type="button"
+                            onClick={() => {
+                              setEditingSceneId(item.sceneId);
+                              setEditingSceneName(item.sceneName || "");
+                              setUserScenesMessage("");
+                            }}
+                          >
+                            改名
+                          </button>
+                          <button
+                            className="backend-auth-userpanel__secondary backend-auth-admin-dialog__action backend-auth-admin-dialog__action--primary"
+                            type="button"
+                            disabled={
+                              openingSceneId === item.sceneId ||
+                              currentSceneId === item.sceneId
+                            }
+                            onClick={() => void openUserScene(item)}
+                          >
+                            {openingSceneId === item.sceneId
+                              ? "打开中..."
+                              : currentSceneId === item.sceneId
+                                ? "当前画布"
+                                : "打开"}
+                          </button>
+                        </>
                       )}
                     </div>
-                    <div className="backend-auth-admin-dialog__summary">
-                      <span className="backend-auth-admin-dialog__meta">
-                        sceneId {item.sceneId}
-                      </span>
-                      <span className="backend-auth-admin-dialog__meta">
-                        {item.currentRoomId
-                          ? `当前 roomId ${item.currentRoomId}`
-                          : "尚未开启协作"}
-                      </span>
-                      <span
-                        className={`backend-auth-admin-dialog__badge ${
-                          item.isCollabEnabled
-                            ? "backend-auth-admin-dialog__badge--success"
-                            : "backend-auth-admin-dialog__badge--muted"
-                        }`}
-                      >
-                        {item.isCollabEnabled ? "协作中" : "未开启协作"}
-                      </span>
-                      <span className="backend-auth-admin-dialog__meta">
-                        最近打开：
-                        {item.lastOpenedAt || item.lastActivatedAt
-                          ? formatAdminUserTime(
-                              item.lastOpenedAt || item.lastActivatedAt,
-                            )
-                          : "未打开"}
-                      </span>
-                      <span className="backend-auth-admin-dialog__meta">
-                        更新：{formatAdminUserTime(item.updatedAt)}
-                      </span>
-                    </div>
                   </div>
-                  <div className="backend-auth-admin-dialog__item-actions">
-                    {editingSceneId === item.sceneId ? (
-                      <>
-                        <button
-                          className="backend-auth-userpanel__secondary backend-auth-admin-dialog__action"
-                          type="button"
-                          disabled={isDialogSubmitting}
-                          onClick={() => {
-                            setEditingSceneId(null);
-                            setEditingSceneName("");
-                            setUserScenesMessage("");
-                          }}
-                        >
-                          取消
-                        </button>
-                        <button
-                          className="backend-auth-userpanel__secondary backend-auth-admin-dialog__action"
-                          type="button"
-                          disabled={isDialogSubmitting}
-                          onClick={() => void renameScene()}
-                        >
-                          {isDialogSubmitting ? "保存中..." : "保存名称"}
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          className="backend-auth-userpanel__secondary backend-auth-admin-dialog__action"
-                          type="button"
-                          onClick={() => {
-                            setEditingSceneId(item.sceneId);
-                            setEditingSceneName(item.sceneName || "");
-                            setUserScenesMessage("");
-                          }}
-                        >
-                          修改名称
-                        </button>
-                        <button
-                          className="backend-auth-userpanel__secondary backend-auth-admin-dialog__action"
-                          type="button"
-                          disabled={openingSceneId === item.sceneId}
-                          onClick={() => void openUserScene(item)}
-                        >
-                          {openingSceneId === item.sceneId
-                            ? "打开中..."
-                            : "打开"}
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
               {!isUserScenesLoading &&
                 filteredUserScenes.length === 0 &&
                 !userScenesMessage && (

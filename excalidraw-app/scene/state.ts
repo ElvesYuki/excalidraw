@@ -6,6 +6,7 @@ export const initialCurrentSceneState: CurrentSceneState = {
   status: "idle",
   scene: null,
   errorMessage: "",
+  isCollabReadOnly: false,
 };
 
 export const currentSceneStateAtom = atom<CurrentSceneState>(

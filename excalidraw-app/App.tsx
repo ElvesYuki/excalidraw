@@ -155,6 +155,7 @@ import { CurrentSceneDialog } from "./scene/CurrentSceneDialog";
 import { useCurrentScene } from "./scene/useCurrentScene";
 
 import type { CollabAPI } from "./collab/Collab";
+import type { SceneDetailRecord } from "./auth/types";
 
 polyfill();
 
@@ -780,10 +781,16 @@ const ExcalidrawWrapper = () => {
   const [isSceneSwitching, setIsSceneSwitching] = useState(false);
   const [isCurrentSceneDialogOpen, setIsCurrentSceneDialogOpen] =
     useState(false);
+  const [sceneDialogScene, setSceneDialogScene] = useState<SceneDetailRecord | null>(
+    null,
+  );
   const [currentSceneNameDraft, setCurrentSceneNameDraft] = useState("");
+  const [currentSceneMemberUsernameDraft, setCurrentSceneMemberUsernameDraft] =
+    useState("");
   const [currentSceneMessage, setCurrentSceneMessage] = useState("");
   const [isCurrentSceneSubmitting, setIsCurrentSceneSubmitting] =
     useState(false);
+  const currentSceneDialogTarget = sceneDialogScene ?? currentScene;
 
   useEffect(() => {
     if (!currentSceneState.errorMessage) {
@@ -1022,6 +1029,7 @@ const ExcalidrawWrapper = () => {
         onExport={onExport}
         initialData={initialStatePromiseRef.current.promise}
         isCollaborating={isCollaborating}
+        viewModeEnabled={isCollaborating && currentSceneState.isCollabReadOnly}
         onPointerUpdate={collabAPI?.onPointerUpdate}
         UIOptions={{
           canvasActions: {
@@ -1081,8 +1089,10 @@ const ExcalidrawWrapper = () => {
                     title={currentSceneTitle}
                     type="button"
                     onClick={() => {
+                      setSceneDialogScene(null);
                       setCurrentSceneNameDraft(currentScene?.sceneName || "");
                       setCurrentSceneMessage("");
+                      setCurrentSceneMemberUsernameDraft("");
                       setIsCurrentSceneDialogOpen(true);
                     }}
                   >
@@ -1112,7 +1122,22 @@ const ExcalidrawWrapper = () => {
                   />
                 </div>
                 <div className="backend-top-right__account">
-                  <AuthUserMenu onSceneReady={setCurrentScene} />
+                  <AuthUserMenu
+                    onSceneReady={setCurrentScene}
+                    sceneSnapshot={currentScene}
+                    currentSceneId={currentScene?.sceneId ?? null}
+                    sceneDetailSnapshot={sceneDialogScene}
+                    onSceneDetailRequest={(sceneDetail) => {
+                      setSceneDialogScene(sceneDetail);
+                      setCurrentSceneNameDraft(sceneDetail.sceneName || "");
+                      setCurrentSceneMemberUsernameDraft("");
+                      setCurrentSceneMessage("");
+                    }}
+                    onSceneDialogOpen={() => {
+                      setCurrentSceneMessage("");
+                      setIsCurrentSceneDialogOpen(true);
+                    }}
+                  />
                 </div>
               </div>
             </div>
@@ -1166,6 +1191,11 @@ const ExcalidrawWrapper = () => {
             {t("alerts.collabOfflineWarning")}
           </div>
         )}
+        {isCollaborating && currentSceneState.isCollabReadOnly && (
+          <div className="alert alert--warning">
+            当前你以只读身份参与协作，可查看但不能编辑或保存画布。
+          </div>
+        )}
         {localStorageQuotaExceeded && (
           <div className="alert alert--danger">
             {t("alerts.localStorageQuotaExceeded")}
@@ -1204,21 +1234,37 @@ const ExcalidrawWrapper = () => {
 
         <AuthDialog />
 
-        {currentScene && (
+        {currentSceneDialogTarget && (
           <CurrentSceneDialog
-            currentScene={currentScene}
+            currentScene={currentSceneDialogTarget}
+            currentUserId={
+              auth?.authState.status === "authenticated"
+                ? auth.authState.user.userId
+                : undefined
+            }
             isOpen={isCurrentSceneDialogOpen}
             nameDraft={currentSceneNameDraft}
+            memberUsernameDraft={currentSceneMemberUsernameDraft}
             message={currentSceneMessage}
             isSubmitting={isCurrentSceneSubmitting}
             onNameDraftChange={setCurrentSceneNameDraft}
+            onMemberUsernameDraftChange={setCurrentSceneMemberUsernameDraft}
             onMessageChange={setCurrentSceneMessage}
             onSubmittingChange={setIsCurrentSceneSubmitting}
-            onCurrentSceneChange={setCurrentScene}
+            onCurrentSceneChange={(updatedScene) => {
+              if (sceneDialogScene?.sceneId === updatedScene.sceneId) {
+                setSceneDialogScene(updatedScene);
+              }
+              if (currentScene?.sceneId === updatedScene.sceneId) {
+                setCurrentScene(updatedScene);
+              }
+            }}
             onClose={() => {
               setIsCurrentSceneDialogOpen(false);
+              setSceneDialogScene(null);
               setCurrentSceneMessage("");
               setCurrentSceneNameDraft("");
+              setCurrentSceneMemberUsernameDraft("");
               setIsCurrentSceneSubmitting(false);
             }}
           />

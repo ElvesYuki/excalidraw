@@ -48,6 +48,8 @@ export type AuthSceneHistoryItem = {
   historySource: "owned" | "collab";
   relationType: string;
   sceneName: string;
+  isFavorite?: boolean;
+  isCollabEnabled?: boolean;
   version: number;
   size: number;
   createdByUserId: number;
@@ -75,8 +77,11 @@ export type SceneRecord = {
   ownerUserId: number;
   sceneName: string;
   status: string;
+  collabAccessMode: "private" | "invite";
   currentRoomId: string;
   isCollabEnabled: boolean;
+  isFavorite: boolean;
+  memberCount: number;
   latestSceneRecordId: number;
   lastActivatedAt?: number;
   lastOpenedAt?: number;
@@ -99,6 +104,21 @@ export type SceneDetailRecord = SceneRecord & {
   isFavorite: boolean;
   memberCount: number;
   members: SceneMemberSummary[];
+};
+
+export type AddSceneMemberResult = {
+  sceneId: number;
+  member: SceneMemberSummary;
+};
+
+export type RemoveSceneMemberResult = {
+  sceneId: number;
+  memberUserId: number;
+};
+
+export type UpdateSceneMemberRoleResult = {
+  sceneId: number;
+  member: SceneMemberSummary;
 };
 
 export type SceneListResult = {

@@ -19,6 +19,9 @@ const toSceneDetailRecord = (scene: SceneRecord): SceneDetailRecord => ({
   members: [],
 });
 
+const isSceneCollabReadOnly = (scene: SceneDetailRecord | null) =>
+  Boolean(scene && scene.viewerRole === "viewer");
+
 export const useCurrentScene = () => {
   const [state, setState] = useAtom(currentSceneStateAtom);
 
@@ -31,10 +34,12 @@ export const useCurrentScene = () => {
       }
 
       updateSceneIdInUrl(scene.sceneId, true);
+      const nextScene = toSceneDetailRecord(scene);
       setState({
         status: "ready",
-        scene: toSceneDetailRecord(scene),
+        scene: nextScene,
         errorMessage: "",
+        isCollabReadOnly: isSceneCollabReadOnly(nextScene),
       });
     },
     [setState],
@@ -45,8 +50,18 @@ export const useCurrentScene = () => {
     if (!sceneId) {
       setState((prev) =>
         prev.scene
-          ? { status: "idle", scene: null, errorMessage: "" }
-          : { ...prev, status: "idle", errorMessage: "" },
+          ? {
+              status: "idle",
+              scene: null,
+              errorMessage: "",
+              isCollabReadOnly: false,
+            }
+          : {
+              ...prev,
+              status: "idle",
+              errorMessage: "",
+              isCollabReadOnly: false,
+            },
       );
       return null;
     }
@@ -55,6 +70,7 @@ export const useCurrentScene = () => {
       status: "loading",
       scene: prev.scene,
       errorMessage: "",
+      isCollabReadOnly: prev.isCollabReadOnly,
     }));
 
     try {
@@ -63,6 +79,7 @@ export const useCurrentScene = () => {
         status: "ready",
         scene,
         errorMessage: "",
+        isCollabReadOnly: isSceneCollabReadOnly(scene),
       });
       return scene;
     } catch (error) {
@@ -78,6 +95,7 @@ export const useCurrentScene = () => {
             error.status === 403
               ? "当前画布无权访问，已返回默认画布。"
               : "当前画布不存在，已返回默认画布。",
+          isCollabReadOnly: false,
         });
         return null;
       }
@@ -87,6 +105,7 @@ export const useCurrentScene = () => {
         status: "error",
         scene: null,
         errorMessage: message,
+        isCollabReadOnly: false,
       });
       return null;
     }

@@ -21,7 +21,11 @@ import { useEffect, useRef, useState } from "react";
 import { atom, useAtom, useAtomValue } from "../app-jotai";
 import { activeRoomLinkAtom } from "../collab/Collab";
 import { useAuth } from "../auth/AuthGate";
-import { createUserScene, openSceneCollab } from "../auth/api";
+import {
+  createUserScene,
+  openSceneCollab,
+  setUserSceneCollabAccessMode,
+} from "../auth/api";
 import { buildSceneCollabUrl } from "../auth/sceneSession";
 
 import "./ShareDialog.scss";
@@ -64,10 +68,12 @@ export type ShareDialogProps = {
 const ActiveRoomDialog = ({
   collabAPI,
   activeRoomLink,
+  currentScene,
   handleClose,
 }: {
   collabAPI: CollabAPI;
   activeRoomLink: string;
+  currentScene?: SceneRecord | null;
   handleClose: () => void;
 }) => {
   const { t } = useI18n();
@@ -151,6 +157,26 @@ const ActiveRoomDialog = ({
         />
       </div>
       <QRCode value={activeRoomLink} />
+      {currentScene && (
+        <div className="ShareDialog__active__mode">
+          <div className="ShareDialog__active__mode__label">当前协作加入方式</div>
+          <div className="ShareDialog__active__mode__value">
+            {currentScene.collabAccessMode === "private"
+              ? "仅成员白名单"
+              : "持链接登录可加入"}
+          </div>
+          <div className="ShareDialog__active__mode__hint">
+            {currentScene.collabAccessMode === "private"
+              ? "这个分享链接仅用于已在成员列表中的用户重新进入协作。"
+              : "拿到这个分享链接并登录的用户，可以自动加入当前画布协作。"}
+          </div>
+          {currentScene.collabAccessMode === "private" && (
+            <div className="ShareDialog__active__mode__hint">
+              被移除的成员即使仍保留旧链接，也不能再通过该链接重新进入。
+            </div>
+          )}
+        </div>
+      )}
       <div className="ShareDialog__active__description">
         <p>
           <span
@@ -190,6 +216,13 @@ const ShareDialogPicker = (props: ShareDialogProps) => {
   const auth = useAuth();
   const { collabAPI } = props;
   const [isStartingCollab, setIsStartingCollab] = useState(false);
+  const [selectedCollabAccessMode, setSelectedCollabAccessMode] = useState<
+    "private" | "invite"
+  >(props.currentScene?.collabAccessMode || "private");
+
+  useEffect(() => {
+    setSelectedCollabAccessMode(props.currentScene?.collabAccessMode || "private");
+  }, [props.currentScene?.collabAccessMode, props.currentScene?.sceneId]);
 
   const openSceneDrivenCollab = async () => {
     if (!auth || auth.authState.status === "disabled" || !collabAPI) {
@@ -205,12 +238,29 @@ const ShareDialogPicker = (props: ShareDialogProps) => {
     setIsStartingCollab(true);
     try {
       let sceneId = props.currentScene?.sceneId || null;
+      let sceneRecord = props.currentScene || null;
       if (!sceneId) {
         const createdScene = await createUserScene(
           props.getSceneName?.().trim() || document.title || "未命名画布",
+          selectedCollabAccessMode,
         );
         sceneId = createdScene.sceneId;
+        sceneRecord = createdScene;
         props.onSceneReady?.(createdScene);
+      }
+
+      if (
+        sceneRecord &&
+        selectedCollabAccessMode !== sceneRecord.collabAccessMode &&
+        auth.authState.status === "authenticated" &&
+        auth.authState.user.userId === sceneRecord.ownerUserId
+      ) {
+        const updatedScene = await setUserSceneCollabAccessMode(
+          sceneRecord.sceneId,
+          selectedCollabAccessMode,
+        );
+        sceneRecord = updatedScene;
+        props.onSceneReady?.(updatedScene);
       }
 
       const collabRoom = await openSceneCollab(sceneId);
@@ -246,6 +296,39 @@ const ShareDialogPicker = (props: ShareDialogProps) => {
         <div style={{ marginBottom: "1em" }}>{t("roomDialog.desc_intro")}</div>
         {t("roomDialog.desc_privacy")}
       </div>
+
+      {auth?.authState.status === "authenticated" &&
+        props.currentScene &&
+        auth.authState.user.userId === props.currentScene.ownerUserId && (
+          <div className="ShareDialog__picker__description">
+            <div className="backend-auth-native-dialog__meta-label">
+              协作加入方式
+            </div>
+            <div className="backend-auth-native-dialog__segmented">
+              <button
+                type="button"
+                className="backend-auth-native-dialog__segmented-button"
+                data-active={selectedCollabAccessMode === "private"}
+                onClick={() => setSelectedCollabAccessMode("private")}
+              >
+                仅成员白名单
+              </button>
+              <button
+                type="button"
+                className="backend-auth-native-dialog__segmented-button"
+                data-active={selectedCollabAccessMode === "invite"}
+                onClick={() => setSelectedCollabAccessMode("invite")}
+              >
+                持链接登录可加入
+              </button>
+            </div>
+            <div style={{ marginTop: "0.5rem" }}>
+              {selectedCollabAccessMode === "private"
+                ? "仅已加入画布的成员可以重新进入并参与协作；被移除后旧链接也会失效。"
+                : "拿到分享链接并登录的用户，可以自动加入当前画布协作。"}
+            </div>
+          </div>
+        )}
 
       <div className="ShareDialog__picker__button">
         <FilledButton
@@ -308,6 +391,7 @@ const ShareDialogInner = (props: ShareDialogProps) => {
           <ActiveRoomDialog
             collabAPI={props.collabAPI}
             activeRoomLink={activeRoomLink}
+            currentScene={props.currentScene}
             handleClose={props.handleClose}
           />
         ) : (
